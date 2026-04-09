@@ -1,0 +1,209 @@
+[
+  {
+    "subclass": "Ancestral Guardian",
+    "class": "Barbarian",
+    "damage": 3.6,
+    "survivability": 4,
+    "support": 3,
+    "control": 2,
+    "utility": 2.1
+  },
+  {
+    "subclass": "Base Artificer",
+    "class": "Artificier",
+    "damage": 2,
+    "survivability": 3.75,
+    "support": 4,
+    "control": 2,
+    "utility": 3
+  },
+  {
+    "subclass": "Base Barbarian",
+    "class": "Barbarian",
+    "damage": 3.5,
+    "survivability": 3.75,
+    "support": 2,
+    "control": 2.25,
+    "utility": 2
+  },
+  {
+    "subclass": "Base Bard",
+    "class": "Bard",
+    "damage": 2.75,
+    "survivability": 1.5,
+    "support": 5,
+    "control": 4.25,
+    "utility": 4.5
+  },
+  {
+    "subclass": "Base Cleric",
+    "class": "Cleric",
+    "damage": 3.25,
+    "survivability": 2.75,
+    "support": 4.5,
+    "control": 3,
+    "utility": 2
+  },
+  {
+    "subclass": "Base Druid",
+    "class": "Druid",
+    "damage": 3.5,
+    "survivability": 3,
+    "support": 4,
+    "control": 3.75,
+    "utility": 4.25
+  },
+  {
+    "subclass": "Base Fighter",
+    "class": "Fighter",
+    "damage": 4,
+    "survivability": 4.125,
+    "support": 2.5,
+    "control": 2.5,
+    "utility": 2.5
+  },
+  {
+    "subclass": "Base Monk",
+    "class": "Monk",
+    "damage": 3,
+    "survivability": 3.5,
+    "support": 1,
+    "control": 3.25,
+    "utility": 3
+  },
+  {
+    "subclass": "Base Paladin",
+    "class": "Paladin",
+    "damage": 3.5,
+    "survivability": 5,
+    "support": 5,
+    "control": 3,
+    "utility": 2.25
+  },
+  {
+    "subclass": "Base Ranger",
+    "class": "Ranger",
+    "damage": 2.5,
+    "survivability": 3.5,
+    "support": 3,
+    "control": 2,
+    "utility": 4
+  },
+  {
+    "subclass": "Base Rogue",
+    "class": "Rogue",
+    "damage": 2,
+    "survivability": 3,
+    "support": 1,
+    "control": 2.5,
+    "utility": 4.75
+  },
+  {
+    "subclass": "Base Sorcerer",
+    "class": "Sorcerer",
+    "damage": 4.5,
+    "survivability": 2.5,
+    "support": 1.75,
+    "control": 4,
+    "utility": 3.5
+  },
+  {
+    "subclass": "Base Warlock",
+    "class": "Warlock",
+    "damage": 4.25,
+    "survivability": 2.5,
+    "support": 1.5,
+    "control": 3.5,
+    "utility": 3.75
+  },
+  {
+    "subclass": "Base Wizard",
+    "class": "Wizard",
+    "damage": 3.5,
+    "survivability": 2.5,
+    "support": 2.5,
+    "control": 5,
+    "utility": 5
+  },
+  {
+    "subclass": "Battle Rager",
+    "class": "Barbarian",
+    "damage": 3.675,
+    "survivability": 4,
+    "support": 2,
+    "control": 2,
+    "utility": 2.075
+  },
+  {
+    "subclass": "Beast",
+    "class": "Barbarian",
+    "damage": 4,
+    "survivability": 4.1,
+    "support": 2.1,
+    "control": 2,
+    "utility": 2.1
+  },
+  {
+    "subclass": "Berskerer",
+    "class": "Barbarian",
+    "damage": 4.1,
+    "survivability": 4.25,
+    "support": 2,
+    "control": 2.1,
+    "utility": 2
+  },
+  {
+    "subclass": "Giant",
+    "class": "Barbarian",
+    "damage": 4.2,
+    "survivability": 4,
+    "support": 2,
+    "control": 2.25,
+    "utility": 2.1
+  },
+  {
+    "subclass": "Storm Herald",
+    "class": "Barbarian",
+    "damage": 3.6,
+    "survivability": 4.1,
+    "support": 2.1,
+    "control": 2.05,
+    "utility": 2.05
+  },
+  {
+    "subclass": "Wild Heart",
+    "class": "Barbarian",
+    "damage": 3.5,
+    "survivability": 4.2,
+    "support": 2.25,
+    "control": 2.05,
+    "utility": 2.25
+  },
+  {
+    "subclass": "Wild Magic",
+    "class": "Barbarian",
+    "damage": 3.65,
+    "survivability": 4.1,
+    "support": 2.2,
+    "control": 2.05,
+    "utility": 2.05
+  },
+  {
+    "subclass": "World Tree",
+    "class": "Barbarian",
+    "damage": 3.5,
+    "survivability": 4.2,
+    "support": 2.5,
+    "control": 2.75,
+    "utility": 2.1
+  },
+  {
+    "subclass": "Zealot",
+    "class": "Barbarian",
+    "damage": 3.85,
+    "survivability": 4.25,
+    "support": 2.1,
+    "control": 2,
+    "utility": 2.1
+  }
+]
