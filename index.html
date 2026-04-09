@@ -340,6 +340,50 @@
         console.error(error);
       }
     });
+
+    function populateClassDropdown() {
+      const classSelect = document.getElementById('classSelect');
+      if (!classSelect) return;
+
+      const classes = [...new Set(subclasses.map(getClassName))]
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b));
+
+      classSelect.innerHTML = `
+        <option value="">Select class...</option>
+        ${classes.map(c => `<option value="${c}">${c}</option>`).join('')}
+      `;
+
+      populateSubclassDropdown('');
+    }
+
+    function populateSubclassDropdown(selectedClass) {
+      const subclassSelect = document.getElementById('subclassSelect');
+      if (!subclassSelect) return;
+
+      if (!selectedClass) {
+        subclassSelect.innerHTML = `<option value="">Select subclass...</option>`;
+        return;
+      }
+
+      const labels = [...new Set(
+        subclasses
+          .filter(r => getClassName(r) === selectedClass)
+          .map(formatOption)
+      )].sort((a, b) => a.localeCompare(b));
+
+      subclassSelect.innerHTML = `
+        <option value="">Select subclass...</option>
+        ${labels.map(l => `<option value="${l}">${l}</option>`).join('')}
+      `;
+    }
+
+    async function fetchSubclasses() {
+      const response = await fetch('./subclasses.json');
+      if (!response.ok) throw new Error(`Failed to load subclasses.json (${response.status})`);
+      subclasses = await response.json();
+      populateClassDropdown();
+    }
   </script>
 </body>
 </html>
