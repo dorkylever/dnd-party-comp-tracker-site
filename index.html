@@ -80,20 +80,10 @@
   </div>
 
   <script>
-    const API_BASE = '/api';
-    const METRICS = ['damage', 'survivability', 'support', 'control', 'utility'];
-    const METRIC_LABELS = ['Damage', 'Survivability', 'Support', 'Control', 'Utility'];
-    const OPTIMISER_MIN = 3.5;
-    let subclasses = [];
-    let selectedSubclassLabels = [];
-    // remove: let avgChart; let sumChart;
-
-    function formatOption(row) {
-      return `${row.subclass} (${row.class})`;
-    }
+    // const API_BASE = '/api'; // remove
 
     async function fetchSubclasses() {
-      const response = await fetch(`${API_BASE}/subclasses`);
+      const response = await fetch('./subclasses.json');
       if (!response.ok) throw new Error('Failed to load subclass data');
       subclasses = await response.json();
       // Unit test for Base Warlock average damage
