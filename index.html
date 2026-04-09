@@ -207,15 +207,14 @@
 
     function updateSelectedList() {
       const el = document.getElementById('selectedList');
-      el.innerHTML = selectedSubclassLabels.map(label => {
-        const escaped = label.replace(/'/g, "\\'");
-        return `<div class="tag">${label}<button type="button" onclick="removeSubclass('${escaped}')">&times;</button></div>`;
+      el.innerHTML = selectedSubclassLabels.map((label, index) => {
+        return `<div class="tag">${label}<button type="button" onclick="removeSubclassAt(${index})">&times;</button></div>`;
       }).join('');
       renderCharts();
     }
 
-    function removeSubclass(label) {
-      selectedSubclassLabels = selectedSubclassLabels.filter(x => x !== label);
+    function removeSubclassAt(index) {
+      selectedSubclassLabels.splice(index, 1); // remove only one instance
       updateSelectedList();
     }
 
@@ -369,13 +368,13 @@
         alert('Select a class and subclass first.');
         return;
       }
-      if (!selectedSubclassLabels.includes(label)) {
-        selectedSubclassLabels.push(label);
-        updateSelectedList();
-      }
+
+      // Allow duplicates
+      selectedSubclassLabels.push(label);
+      updateSelectedList();
     });
 
-    window.removeSubclass = removeSubclass;
+    window.removeSubclassAt = removeSubclassAt;
 
     window.addEventListener('DOMContentLoaded', async () => {
       try {
