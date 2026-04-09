@@ -8,7 +8,7 @@
   <style>
     body { font-family: Arial, sans-serif; margin: 24px; background: #f4f4f4; color: #1f2937; }
     h1 { margin-bottom: 16px; }
-    .card { background: #fff; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.08); padding: 20px; max-width: 1100px; margin-bottom: 24px; }
+    .card { background: #fff; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.08); padding: 20px; max-width: 1200px; margin-bottom: 24px; }
     .search-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     select, button { padding: 10px 12px; border-radius: 8px; }
     select { border: 1px solid #cbd5e1; min-width: 220px; background: #fff; }
@@ -38,14 +38,14 @@
   <h1>DND Party Composition Tracker</h1>
 
   <div class="card">
-    <p>Select a class, then a subclass, then add it to the party.</p>
+    <p>Select class, then subclass, then add to party.</p>
     <div class="search-row">
       <select id="classSelect"><option value="">Select class...</option></select>
       <select id="subclassSelect"><option value="">Select subclass...</option></select>
       <button id="addSubclassButton" type="button">Add subclass</button>
     </div>
     <div id="selectedList"></div>
-    <p class="caption">Tip: add duplicates if you want multiple players on the same subclass.</p>
+    <p class="caption">Duplicates are allowed (multiple players can use the same subclass).</p>
   </div>
 
   <div class="chart-grid">
@@ -71,8 +71,21 @@
     </div>
 
     <div class="card chart-card">
-      <div class="chart-title">Condition Traits Matrix</div>
-      <div id="conditionMatrix" style="width:100%;height:420px;"></div>
+      <div class="chart-title" style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+        <span>Condition + Damage Traits Matrix</span>
+        <label style="font-size:.9rem;">
+          Tier:
+          <select id="tierSelect" style="margin-left:6px; min-width:90px;">
+            <option value="T1">T1</option>
+            <option value="T2">T2</option>
+            <option value="T3">T3</option>
+            <option value="T4" selected>T4</option>
+          </select>
+        </label>
+      </div>
+      <div style="overflow-x:auto;">
+        <div id="conditionMatrix" style="width:100%;height:420px;min-width:980px;"></div>
+      </div>
       <p id="conditionMatrixMessage" class="caption"></p>
       <p class="caption">Advantage = faint blue, Resistance = mid blue, Immunity = dark blue.</p>
     </div>
@@ -93,11 +106,21 @@
       'invisible','paralyzed','petrified','poisoned','prone','restrained','stunned','unconscious'
     ];
 
+    const DAMAGE_TYPES = [
+      'acid','bludgeoning','cold','fire','force','lightning','necrotic',
+      'piercing','poison','psychic','radiant','slashing','thunder'
+    ];
+
     const TRAIT_COLUMNS = {
       advantage: ['condition_advantages','advantages_to_conditions','condition_advantage','advantages'],
       resistance: ['condition_resistances','resistances_to_conditions','condition_resistance','resistances'],
-      immunity: ['condition_immunities','immunities_to_conditions','condition_immunity','immunities']
+      immunity: ['condition_immunities','immunities_to_conditions','condition_immunity','immunities'],
+      damageResistance: ['damage_resistances','resistance_damage_types','damage_resistance'],
+      damageImmunity: ['damage_immunities','immunity_damage_types','damage_immunity']
     };
+
+    const TIER_COLUMN_CANDIDATES = ['tier', 'play_tier', 'level_tier', 'tier_tag', 'tier_band'];
+    const TIER_RANK = { T1: 1, T2: 2, T3: 3, T4: 4 };
 
     let subclasses = [];
     let selectedSubclassLabels = [];
@@ -111,7 +134,7 @@
     }
 
     function normalizeToken(s) {
-      return String(s || '').toLowerCase().replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      return String(s ?? '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
     }
 
     function parseList(value) {
@@ -120,12 +143,40 @@
       return String(value).split(/[,;|/\n]+/g).map(normalizeToken).filter(Boolean);
     }
 
-    function getTraitSet(rows, candidates) {
+    function normalizeTier(value) {
+      const t = normalizeToken(value).toUpperCase();
+      if (!t) return null;
+      if (TIER_RANK[t]) return t;
+      const m = t.match(/\b([1-4])\b/);
+      return m ? `T${m[1]}` : null;
+    }
+
+    function rowTier(row) {
+      for (const c of TIER_COLUMN_CANDIDATES) {
+        const t = normalizeTier(row?.[c]);
+        if (t) return t;
+      }
+      return null;
+    }
+
+    function rowsForLabelAtTier(label, selectedTier) {
+      const maxRank = TIER_RANK[selectedTier] || 4;
+      return subclasses
+        .filter(r => formatOption(r) === label)
+        .filter(r => {
+          const t = rowTier(r);
+          return !t || TIER_RANK[t] <= maxRank;
+        });
+    }
+
+    function getTraitSet(rows, candidateCols, allowedTerms) {
       const out = new Set();
       rows.forEach(row => {
-        candidates.forEach(col => {
-          parseList(row[col]).forEach(tok => {
-            CONDITIONS.forEach(cond => { if (tok.includes(cond)) out.add(cond); });
+        candidateCols.forEach(col => {
+          parseList(row?.[col]).forEach(tok => {
+            allowedTerms.forEach(term => {
+              if (tok.includes(term)) out.add(term);
+            });
           });
         });
       });
@@ -135,41 +186,14 @@
     function getMetrics(label) {
       const row = subclasses.find(r => formatOption(r) === label);
       if (!row) return null;
-      return METRICS.map(m => Number(row[m] || 0));
+      return METRICS.map(m => Number(row?.[m] || 0));
     }
 
     function getPartyAverage(labels) {
-      const values = labels.map(getMetrics).filter(Boolean);
-      if (!values.length) return null;
-      const totals = values.reduce((acc, arr) => acc.map((v, i) => v + arr[i]), [0, 0, 0, 0, 0]);
-      return totals.map(v => v / values.length);
-    }
-
-    function populateClassDropdown() {
-      const classSelect = document.getElementById('classSelect');
-      const classes = [...new Set(subclasses.map(getClassName))].filter(Boolean).sort((a, b) => a.localeCompare(b));
-      classSelect.innerHTML = `<option value="">Select class...</option>${classes.map(c => `<option value="${c}">${c}</option>`).join('')}`;
-      populateSubclassDropdown('');
-    }
-
-    function populateSubclassDropdown(selectedClass) {
-      const subclassSelect = document.getElementById('subclassSelect');
-      if (!selectedClass) {
-        subclassSelect.innerHTML = `<option value="">Select subclass...</option>`;
-        return;
-      }
-
-      const labels = [...new Set(subclasses.filter(r => getClassName(r) === selectedClass).map(formatOption))]
-        .sort((a, b) => a.localeCompare(b));
-
-      subclassSelect.innerHTML = `<option value="">Select subclass...</option>${labels.map(l => `<option value="${l}">${l}</option>`).join('')}`;
-    }
-
-    async function fetchSubclasses() {
-      const response = await fetch('./subclasses.json');
-      if (!response.ok) throw new Error('Failed to load subclasses.json');
-      subclasses = await response.json();
-      populateClassDropdown();
+      const vals = labels.map(getMetrics).filter(Boolean);
+      if (!vals.length) return null;
+      const totals = vals.reduce((acc, arr) => acc.map((v, i) => v + arr[i]), [0, 0, 0, 0, 0]);
+      return totals.map(v => v / vals.length);
     }
 
     function getOptimiserSuggestion(labels) {
@@ -179,13 +203,15 @@
       let threshold = OPTIMISER_MIN;
       while (threshold >= 0) {
         let best = null;
+
         subclasses.forEach(candidateRow => {
           const candidateLabel = formatOption(candidateRow);
           if (labels.includes(candidateLabel)) return;
 
-          const candidateValues = METRICS.map(m => Number(candidateRow[m] || 0));
+          const candidateValues = METRICS.map(m => Number(candidateRow?.[m] || 0));
           const n = labels.length;
           const combined = currentAvg.map((v, i) => ((v * n) + candidateValues[i]) / (n + 1));
+
           if (!combined.every(v => v > threshold)) return;
 
           const combinedAvg = combined.reduce((a, b) => a + b, 0) / combined.length;
@@ -200,10 +226,48 @@
       return null;
     }
 
+    function populateClassDropdown() {
+      const classSelect = document.getElementById('classSelect');
+      const classes = [...new Set(subclasses.map(getClassName))]
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b));
+
+      classSelect.innerHTML = `<option value="">Select class...</option>${
+        classes.map(c => `<option value="${c}">${c}</option>`).join('')
+      }`;
+
+      populateSubclassDropdown('');
+    }
+
+    function populateSubclassDropdown(selectedClass) {
+      const subclassSelect = document.getElementById('subclassSelect');
+      if (!selectedClass) {
+        subclassSelect.innerHTML = `<option value="">Select subclass...</option>`;
+        return;
+      }
+
+      const labels = [...new Set(
+        subclasses
+          .filter(r => getClassName(r) === selectedClass)
+          .map(formatOption)
+      )].sort((a, b) => a.localeCompare(b));
+
+      subclassSelect.innerHTML = `<option value="">Select subclass...</option>${
+        labels.map(l => `<option value="${l}">${l}</option>`).join('')
+      }`;
+    }
+
+    async function fetchSubclasses() {
+      const response = await fetch('./subclasses.json');
+      if (!response.ok) throw new Error('Failed to load subclasses.json');
+      subclasses = await response.json();
+      populateClassDropdown();
+    }
+
     function updateSelectedList() {
       const el = document.getElementById('selectedList');
-      el.innerHTML = selectedSubclassLabels.map((label, index) =>
-        `<div class="tag">${label}<button type="button" onclick="removeSubclassAt(${index})">&times;</button></div>`
+      el.innerHTML = selectedSubclassLabels.map((label, idx) =>
+        `<div class="tag">${label}<button type="button" onclick="removeSubclassAt(${idx})">&times;</button></div>`
       ).join('');
       renderCharts();
     }
@@ -218,8 +282,14 @@
 
       if (!selectedSubclassLabels.length) {
         container.innerHTML = `
-          <div class="suggestion-item"><div class="suggestion-title">The Optimiser's Dream</div><div class="suggestion-content">Add subclasses to get recommendations.</div></div>
-          <div class="suggestion-item"><div class="suggestion-title">The Vibes Check</div><div class="suggestion-content">Add subclasses to get recommendations.</div></div>
+          <div class="suggestion-item">
+            <div class="suggestion-title">The Optimiser's Dream</div>
+            <div class="suggestion-content">Add subclasses to get recommendations.</div>
+          </div>
+          <div class="suggestion-item">
+            <div class="suggestion-title">The Vibes Check</div>
+            <div class="suggestion-content">Add subclasses to get recommendations.</div>
+          </div>
         `;
         return;
       }
@@ -232,7 +302,7 @@
         const label = formatOption(candidateRow);
         if (selectedSubclassLabels.includes(label)) return;
 
-        const vals = METRICS.map(m => Number(candidateRow[m] || 0));
+        const vals = METRICS.map(m => Number(candidateRow?.[m] || 0));
         const count = selectedSubclassLabels.length + 1;
         const combined = currentAvg.map((v, i) => (v * selectedSubclassLabels.length + vals[i]) / count);
         const mean = combined.reduce((a, b) => a + b, 0) / combined.length;
@@ -250,8 +320,9 @@
         <div class="suggestion-item">
           <div class="suggestion-title">The Optimiser's Dream</div>
           <div class="suggestion-content">
-            ${opt ? `${opt.label}<br/>Combined Avg: ${opt.combinedAvg.toFixed(2)}<br/>All metrics &gt; ${opt.thresholdUsed.toFixed(2)}`
-                  : 'No valid subclass found, even after lowering threshold by 0.25.'}
+            ${opt
+              ? `${opt.label}<br/>Combined Avg: ${opt.combinedAvg.toFixed(2)}<br/>All metrics &gt; ${opt.thresholdUsed.toFixed(2)}`
+              : 'No valid subclass found, even after lowering threshold by 0.25.'}
           </div>
         </div>
         <div class="suggestion-item">
@@ -289,17 +360,18 @@
       const el = document.getElementById(plotId);
       if (!el || el.__bound) return;
 
-      el.on('plotly_hover', evt => {
+      el.on('plotly_hover', (evt) => {
         const p = evt.points?.[0];
         if (!p) return;
-        document.getElementById(hoverInfoId).textContent = `${p.fullData.name} • ${p.theta}: ${Number(p.r).toFixed(3)}`;
+        document.getElementById(hoverInfoId).textContent =
+          `${p.fullData.name} • ${p.theta}: ${Number(p.r).toFixed(3)}`;
       });
 
       el.on('plotly_unhover', () => {
         document.getElementById(hoverInfoId).textContent = 'Hover a point to inspect values.';
       });
 
-      el.on('plotly_click', evt => {
+      el.on('plotly_click', (evt) => {
         const p = evt.points?.[0];
         document.getElementById(clickInfoId).textContent = p
           ? `Pinned: ${p.fullData.name} • ${p.theta}: ${Number(p.r).toFixed(3)}`
@@ -311,23 +383,43 @@
 
     function renderConditionMatrix() {
       const msg = document.getElementById('conditionMatrixMessage');
+      const tier = document.getElementById('tierSelect')?.value || 'T4';
 
       if (!selectedSubclassLabels.length) {
         Plotly.purge('conditionMatrix');
-        msg.textContent = 'Add one or more subclasses to view condition traits.';
+        msg.textContent = `Add subclasses to view condition/damage traits (${tier} additive).`;
         return;
       }
 
+      const cols = [
+        ...CONDITIONS.map(c => ({ kind: 'cond', key: c, label: `Cond • ${c[0].toUpperCase()}${c.slice(1)}` })),
+        ...DAMAGE_TYPES.map(d => ({ kind: 'dmg', key: d, label: `Dmg • ${d[0].toUpperCase()}${d.slice(1)}` }))
+      ];
+
       const yLabels = [...selectedSubclassLabels];
-      const xLabels = CONDITIONS.map(c => c[0].toUpperCase() + c.slice(1));
+      const xLabels = cols.map(c => c.label);
 
       const z = yLabels.map(label => {
-        const rows = subclasses.filter(r => formatOption(r) === label);
-        const adv = getTraitSet(rows, TRAIT_COLUMNS.advantage);
-        const res = getTraitSet(rows, TRAIT_COLUMNS.resistance);
-        const imm = getTraitSet(rows, TRAIT_COLUMNS.immunity);
+        const rows = rowsForLabelAtTier(label, tier);
 
-        return CONDITIONS.map(cond => imm.has(cond) ? 3 : res.has(cond) ? 2 : adv.has(cond) ? 1 : 0);
+        const condAdv = getTraitSet(rows, TRAIT_COLUMNS.advantage, CONDITIONS);
+        const condRes = getTraitSet(rows, TRAIT_COLUMNS.resistance, CONDITIONS);
+        const condImm = getTraitSet(rows, TRAIT_COLUMNS.immunity, CONDITIONS);
+
+        const dmgRes = getTraitSet(rows, [...TRAIT_COLUMNS.damageResistance, ...TRAIT_COLUMNS.resistance], DAMAGE_TYPES);
+        const dmgImm = getTraitSet(rows, [...TRAIT_COLUMNS.damageImmunity, ...TRAIT_COLUMNS.immunity], DAMAGE_TYPES);
+
+        return cols.map(c => {
+          if (c.kind === 'cond') {
+            if (condImm.has(c.key)) return 3;
+            if (condRes.has(c.key)) return 2;
+            if (condAdv.has(c.key)) return 1;
+            return 0;
+          }
+          if (dmgImm.has(c.key)) return 3;
+          if (dmgRes.has(c.key)) return 2;
+          return 0;
+        });
       });
 
       Plotly.react('conditionMatrix', [{
@@ -346,28 +438,28 @@
         showscale: false,
         hovertemplate: '<b>%{y}</b><br>%{x}<br>Level: %{z}<extra></extra>'
       }], {
-        margin: { l: 160, r: 20, t: 10, b: 120 },
+        margin: { l: 180, r: 20, t: 10, b: 140 },
         xaxis: { tickangle: -35 },
         yaxis: { automargin: true }
       }, { responsive: true, displayModeBar: true });
 
-      msg.textContent = '0=None, 1=Advantage, 2=Resistance, 3=Immunity';
+      msg.textContent = `${tier} selected (additive). 0=None, 1=Advantage, 2=Resistance, 3=Immunity`;
     }
 
     function renderCharts() {
+      calculateSuggestions();
+
       const avgMessage = document.getElementById('chartMessageAvg');
       const sumMessage = document.getElementById('chartMessageSum');
-      const colors = ['#2563eb','#10b981','#f59e0b','#ef4444','#a855f7','#0ea5e9','#eab308','#f97316','#ec4899'];
-
-      calculateSuggestions();
+      const palette = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#a855f7', '#0ea5e9', '#eab308', '#f97316', '#ec4899'];
 
       const selectedData = selectedSubclassLabels
         .map(label => ({ label, values: getMetrics(label) }))
-        .filter(d => d.values);
+        .filter(x => x.values);
 
       if (!selectedData.length) {
         avgMessage.textContent = 'Add one or more subclasses to see radar plots.';
-        sumMessage.textContent = 'Add one or more subclasses to see average values.';
+        sumMessage.textContent = 'Add one or more subclasses to see averaged values.';
         Plotly.purge('radarChartAvg');
         Plotly.purge('radarChartSum');
         renderConditionMatrix();
@@ -377,7 +469,7 @@
       avgMessage.textContent = '';
       sumMessage.textContent = '';
 
-      const avgTraces = selectedData.map((d, i) => toPolarTrace(d.label, d.values, colors[i % colors.length]));
+      const avgTraces = selectedData.map((d, i) => toPolarTrace(d.label, d.values, palette[i % palette.length]));
       const partyAvg = getPartyAverage(selectedSubclassLabels);
       const sumTrace = toPolarTrace('Average of selected subclasses', partyAvg, '#10b981');
 
@@ -392,6 +484,10 @@
 
     document.getElementById('classSelect').addEventListener('change', (e) => {
       populateSubclassDropdown(e.target.value);
+    });
+
+    document.getElementById('tierSelect').addEventListener('change', () => {
+      renderConditionMatrix();
     });
 
     document.getElementById('addSubclassButton').addEventListener('click', () => {
@@ -415,7 +511,8 @@
           <div style="padding:24px;max-width:720px;margin:40px auto;font-family:Arial,sans-serif;color:#1f2937;">
             <h1 style="font-size:1.8rem;margin-bottom:16px;">Data loading failed</h1>
             <p style="font-size:1rem;line-height:1.6;">${error.message}</p>
-          </div>`;
+          </div>
+        `;
         console.error(error);
       }
     });
