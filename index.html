@@ -126,11 +126,29 @@
     let selectedSubclassLabels = [];
 
     function formatOption(row) {
-      return `${row?.subclass ?? 'Unknown Subclass'} (${row?.class ?? row?.class_name ?? 'Unknown Class'})`;
+      const subclass = getSubclassName(row) || 'Unknown Subclass';
+      const clazz = getClassName(row) || 'Unknown Class';
+      return `${subclass} (${clazz})`;
     }
 
     function getClassName(row) {
-      return row?.class ?? row?.class_name ?? 'Unknown Class';
+      return String(
+        row?.class ??
+        row?.class_name ??
+        row?.Class ??
+        row?.CLASS ??
+        ''
+      ).trim();
+    }
+
+    function getSubclassName(row) {
+      return String(
+        row?.subclass ??
+        row?.sub_class ??
+        row?.Subclass ??
+        row?.SUBCLASS ??
+        ''
+      ).trim();
     }
 
     function norm(s) {
@@ -381,7 +399,21 @@
     async function fetchSubclasses() {
       const response = await fetch('./subclasses.json');
       if (!response.ok) throw new Error(`Failed to load subclasses.json (${response.status})`);
-      subclasses = await response.json();
+
+      const raw = await response.json();
+
+      subclasses = (Array.isArray(raw) ? raw : []).map(r => ({
+        ...r,
+        class: getClassName(r),
+        subclass: getSubclassName(r)
+      }));
+
+      const usable = subclasses.filter(r => r.class && r.subclass);
+      if (!usable.length) {
+        throw new Error('No usable class/subclass fields found in subclasses.json');
+      }
+
+      subclasses = usable;
       populateClassDropdown();
     }
   </script>
