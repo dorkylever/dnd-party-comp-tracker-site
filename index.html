@@ -132,11 +132,17 @@
     }
 
     function getClassName(row) {
-      return pickField(row, ['class', 'class_name', 'classname', 'Class', 'CLASS']);
+      return pickField(row, [
+        'class', 'class_name', 'classname', 'dnd_class', 'character_class',
+        'Class', 'CLASS'
+      ]);
     }
 
     function getSubclassName(row) {
-      return pickField(row, ['subclass', 'sub_class', 'subclassname', 'Subclass', 'SUBCLASS']);
+      return pickField(row, [
+        'subclass', 'sub_class', 'subclassname', 'sub_class_name',
+        'Subclass', 'SUBCLASS'
+      ]);
     }
 
     function norm(s) {
@@ -332,10 +338,39 @@
 
     window.removeSubclassAt = removeSubclassAt;
 
+    // KEEP ONLY THIS ONE fetchSubclasses (delete any earlier duplicate)
+    async function fetchSubclasses() {
+      const response = await fetch('./subclasses.json', { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Failed to load subclasses.json (${response.status})`);
+
+      const raw = await response.json();
+      const rows =
+        Array.isArray(raw) ? raw :
+        Array.isArray(raw?.rows) ? raw.rows :
+        Array.isArray(raw?.data) ? raw.data : [];
+
+      if (!rows.length) throw new Error('subclasses.json loaded but contains zero rows.');
+
+      subclasses = rows.map(r => ({
+        ...r,
+        class: getClassName(r),
+        subclass: getSubclassName(r)
+      }));
+
+      const usable = subclasses.filter(r => r.class && r.subclass);
+      console.log('[Data] rows:', rows.length, 'usable:', usable.length, 'first keys:', Object.keys(rows[0] || {}));
+
+      if (!usable.length) throw new Error('No usable class/subclass fields found. Check JSON key names.');
+
+      subclasses = usable;
+      populateClassDropdown();
+      runDataSanityChecks(subclasses);
+    }
+
+    // safer boot: don't destroy page if chart render fails
     window.addEventListener('DOMContentLoaded', async () => {
       try {
         await fetchSubclasses();
-        renderCharts();
       } catch (error) {
         document.body.innerHTML = `
           <div style="padding:24px;max-width:720px;margin:40px auto;font-family:Arial,sans-serif;color:#1f2937;">
@@ -344,6 +379,13 @@
           </div>
         `;
         console.error(error);
+        return;
+      }
+
+      try {
+        renderCharts();
+      } catch (error) {
+        console.error('[Render] chart render failed:', error);
       }
     });
 
@@ -384,20 +426,28 @@
       `;
     }
 
+    function normalizeKey(k) {
+      return String(k || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    }
+
     function pickField(row, candidates) {
       if (!row || typeof row !== 'object') return '';
       const keys = Object.keys(row);
+
+      // exact first
       for (const c of candidates) {
-        // exact
         if (row[c] != null && String(row[c]).trim() !== '') return String(row[c]).trim();
-        // loose (ignore case, spaces, underscores)
-        const match = keys.find(k =>
-          k.toLowerCase().replace(/[\s_]/g, '') === c.toLowerCase().replace(/[\s_]/g, '')
-        );
+      }
+
+      // normalized fallback
+      for (const c of candidates) {
+        const target = normalizeKey(c);
+        const match = keys.find(k => normalizeKey(k) === target);
         if (match && row[match] != null && String(row[match]).trim() !== '') {
           return String(row[match]).trim();
         }
       }
+
       return '';
     }
 
@@ -411,6 +461,8 @@
         Array.isArray(raw?.rows) ? raw.rows :
         Array.isArray(raw?.data) ? raw.data : [];
 
+      if (!rows.length) throw new Error('subclasses.json loaded but contains zero rows.');
+
       subclasses = rows.map(r => ({
         ...r,
         class: getClassName(r),
@@ -418,15 +470,42 @@
       }));
 
       const usable = subclasses.filter(r => r.class && r.subclass);
-      subclasses = usable;
+      console.log('[Data] rows:', rows.length, 'usable:', usable.length, 'first keys:', Object.keys(rows[0] || {}));
 
-      console.log('Loaded rows:', rows.length, 'usable rows:', usable.length);
-      if (!usable.length) {
-        console.log('Sample row keys:', rows[0] ? Object.keys(rows[0]) : []);
-        throw new Error('No usable class/subclass rows found in subclasses.json');
+      if (!usable.length) throw new Error('No usable class/subclass fields found. Check JSON key names.');
+
+      subclasses = usable;
+      populateClassDropdown();
+      runDataSanityChecks(subclasses);
+    }
+
+    function runDataSanityChecks(rows) {
+      // Base Warlock damage average should be 4.25
+      const warlocks = rows.filter(r =>
+        String(getSubclassName(r)).trim().toLowerCase() === 'base warlock'
+      );
+
+      if (!warlocks.length) {
+        console.warn('[Sanity] Base Warlock rows not found.');
+        return;
       }
 
-      populateClassDropdown();
+      const vals = warlocks
+        .map(r => Number(r?.damage))
+        .filter(v => Number.isFinite(v));
+
+      if (!vals.length) {
+        console.error('[Sanity] Base Warlock rows found but damage is non-numeric/missing.');
+        return;
+      }
+
+      const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+      if (Math.abs(avg - 4.25) > 0.001) {
+        console.error(`[Sanity] Base Warlock avg damage mismatch: got ${avg.toFixed(3)}, expected 4.25`);
+        alert(`Data sanity warning: Base Warlock avg damage = ${avg.toFixed(3)} (expected 4.25).`);
+      } else {
+        console.log('[Sanity] Base Warlock avg damage OK (4.25).');
+      }
     }
   </script>
 </body>
