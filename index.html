@@ -132,23 +132,11 @@
     }
 
     function getClassName(row) {
-      return String(
-        row?.class ??
-        row?.class_name ??
-        row?.Class ??
-        row?.CLASS ??
-        ''
-      ).trim();
+      return pickField(row, ['class', 'class_name', 'classname', 'Class', 'CLASS']);
     }
 
     function getSubclassName(row) {
-      return String(
-        row?.subclass ??
-        row?.sub_class ??
-        row?.Subclass ??
-        row?.SUBCLASS ??
-        ''
-      ).trim();
+      return pickField(row, ['subclass', 'sub_class', 'subclassname', 'Subclass', 'SUBCLASS']);
     }
 
     function norm(s) {
@@ -396,24 +384,48 @@
       `;
     }
 
+    function pickField(row, candidates) {
+      if (!row || typeof row !== 'object') return '';
+      const keys = Object.keys(row);
+      for (const c of candidates) {
+        // exact
+        if (row[c] != null && String(row[c]).trim() !== '') return String(row[c]).trim();
+        // loose (ignore case, spaces, underscores)
+        const match = keys.find(k =>
+          k.toLowerCase().replace(/[\s_]/g, '') === c.toLowerCase().replace(/[\s_]/g, '')
+        );
+        if (match && row[match] != null && String(row[match]).trim() !== '') {
+          return String(row[match]).trim();
+        }
+      }
+      return '';
+    }
+
     async function fetchSubclasses() {
-      const response = await fetch('./subclasses.json');
+      const response = await fetch('./subclasses.json', { cache: 'no-store' });
       if (!response.ok) throw new Error(`Failed to load subclasses.json (${response.status})`);
 
       const raw = await response.json();
+      const rows =
+        Array.isArray(raw) ? raw :
+        Array.isArray(raw?.rows) ? raw.rows :
+        Array.isArray(raw?.data) ? raw.data : [];
 
-      subclasses = (Array.isArray(raw) ? raw : []).map(r => ({
+      subclasses = rows.map(r => ({
         ...r,
         class: getClassName(r),
         subclass: getSubclassName(r)
       }));
 
       const usable = subclasses.filter(r => r.class && r.subclass);
+      subclasses = usable;
+
+      console.log('Loaded rows:', rows.length, 'usable rows:', usable.length);
       if (!usable.length) {
-        throw new Error('No usable class/subclass fields found in subclasses.json');
+        console.log('Sample row keys:', rows[0] ? Object.keys(rows[0]) : []);
+        throw new Error('No usable class/subclass rows found in subclasses.json');
       }
 
-      subclasses = usable;
       populateClassDropdown();
     }
   </script>
