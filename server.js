@@ -13,30 +13,17 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
 app.get('/api/subclasses', (req, res) => {
+  // IMPORTANT: use your actual table/view name below
   const sql = `
-    SELECT
-      subclass,
-      class,
-      AVG(damage) AS damage,
-      AVG(survivability) AS survivability,
-      AVG(support) AS support,
-      AVG(control) AS control,
-      AVG(utility) AS utility
+    SELECT *
     FROM subclasses
-    WHERE damage IS NOT NULL
-      AND utility IS NOT NULL
-    GROUP BY subclass, class
-    ORDER BY subclass COLLATE NOCASE
   `;
 
-  console.log('SQL:', sql);
-  console.log('Executing AVG query');
   db.all(sql, [], (err, rows) => {
     if (err) {
-      console.error('DB Error:', err);
-      return res.status(500).json({ error: err.message });
+      console.error('DB error:', err.message);
+      return res.status(500).json({ error: 'Database query failed' });
     }
-    console.log('Rows returned:', rows.length);
     res.json(rows);
   });
 });
