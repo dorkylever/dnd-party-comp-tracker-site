@@ -46,14 +46,18 @@
 <body>
   <h1>DND Subclass Radar</h1>
   <div class="card">
-    <p>Select one or more subclasses from the searchable dropdown. Only unique subclasses are shown, merged across youtubers.</p>
+    <p>Select class, then subclass. Only unique subclass options are shown per class.</p>
     <div class="search-row">
-      <input id="subclassSearch" list="subclassOptions" placeholder="Search subclass or class..." autocomplete="off" />
+      <select id="classSelect" style="flex:1; min-width:220px; padding:10px 12px; border:1px solid #cbd5e1; border-radius:8px;">
+        <option value="">Select class...</option>
+      </select>
+      <select id="subclassSelect" style="flex:1; min-width:260px; padding:10px 12px; border:1px solid #cbd5e1; border-radius:8px;">
+        <option value="">Select subclass...</option>
+      </select>
       <button id="addSubclassButton" type="button">Add subclass</button>
     </div>
-    <datalist id="subclassOptions"></datalist>
     <div id="selectedList"></div>
-    <p class="caption">Tip: type "Base Barbarian" and add it to the selected list.</p>
+    <p class="caption">Pick a class first, then choose a subclass.</p>
   </div>
 
   <div class="chart-grid">
@@ -94,12 +98,16 @@
       return `${subclass} (${clazz})`;
     }
 
+    function getClassName(row) {
+      return row?.class ?? row?.class_name ?? 'Unknown Class';
+    }
+
     async function fetchSubclasses() {
       const response = await fetch('./subclasses.json');
       if (!response.ok) throw new Error('Failed to load subclass data');
       subclasses = await response.json();
 
-      // Keep test visible, but do not hard-block production page
+      // Existing validation
       const baseWarlockEntries = subclasses.filter(r => r.subclass === 'Base Warlock');
       if (baseWarlockEntries.length > 0) {
         const avgDamage = baseWarlockEntries.reduce((sum, r) => sum + Number(r.damage || 0), 0) / baseWarlockEntries.length;
@@ -108,19 +116,7 @@
         }
       }
 
-      const seen = new Set();
-      const options = [];
-      subclasses.forEach(row => {
-        const label = formatOption(row);
-        if (!seen.has(label)) {
-          seen.add(label);
-          options.push(label);
-        }
-      });
-
-      document.getElementById('subclassOptions').innerHTML = options
-        .map(label => `<option value="${label}">`)
-        .join('');
+      populateClassDropdown();
     }
 
     function findSubclass(value) {
@@ -432,22 +428,21 @@
     }
 
     document.getElementById('addSubclassButton').addEventListener('click', () => {
-      const input = document.getElementById('subclassSearch');
-      const row = findSubclass(input.value);
-      if (!row) {
-        alert('No matching subclass found. Try typing the subclass or class name exactly.');
+      const subclassLabel = document.getElementById('subclassSelect').value;
+      if (!subclassLabel) {
+        alert('Select a class and subclass first.');
         return;
       }
-      const label = formatOption(row);
 
-      // Prevent duplicate tags
-      if (!selectedSubclassLabels.includes(label)) {
-        selectedSubclassLabels.push(label);
+      if (!selectedSubclassLabels.includes(subclassLabel)) {
+        selectedSubclassLabels.push(subclassLabel);
         updateSelectedList();
       }
+    });
 
-      input.value = '';
-      input.focus();
+    // New class -> subclass cascading behavior
+    document.getElementById('classSelect').addEventListener('change', (e) => {
+      populateSubclassDropdown(e.target.value);
     });
 
     window.removeSubclass = removeSubclass;
