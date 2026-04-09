@@ -111,16 +111,16 @@
       'piercing','poison','psychic','radiant','slashing','thunder'
     ];
 
-    const TRAIT_COLUMNS = {
-      advantage: ['condition_advantages','advantages_to_conditions','condition_advantage','advantages'],
-      resistance: ['condition_resistances','resistances_to_conditions','condition_resistance','resistances'],
-      immunity: ['condition_immunities','immunities_to_conditions','condition_immunity','immunities'],
-      damageResistance: ['damage_resistances','resistance_damage_types','damage_resistance'],
-      damageImmunity: ['damage_immunities','immunity_damage_types','damage_immunity']
-    };
-
-    const TIER_COLUMN_CANDIDATES = ['tier', 'play_tier', 'level_tier', 'tier_tag', 'tier_band'];
     const TIER_RANK = { T1: 1, T2: 2, T3: 3, T4: 4 };
+
+    // Flexible raw text columns from DB
+    const RAW_TRAIT_COLUMNS = {
+      advantage: ['condition_advantages', 'advantages_to_conditions', 'defensive_advantages', 'advantages'],
+      resistance: ['condition_resistances', 'resistances_to_conditions', 'defensive_resistances', 'resistances'],
+      immunity: ['condition_immunities', 'immunities_to_conditions', 'defensive_immunities', 'immunities'],
+      damageResistance: ['damage_resistances', 'resistance_damage_types', 'damage_resistance'],
+      damageImmunity: ['damage_immunities', 'immunity_damage_types', 'damage_immunity']
+    };
 
     let subclasses = [];
     let selectedSubclassLabels = [];
@@ -133,252 +133,87 @@
       return row?.class ?? row?.class_name ?? 'Unknown Class';
     }
 
-    function normalizeToken(s) {
-      return String(s ?? '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    function norm(s) {
+      return String(s ?? '').toLowerCase().replace(/[^a-z0-9\s:]/g, ' ').replace(/\s+/g, ' ').trim();
     }
 
-    function parseList(value) {
-      if (!value) return [];
-      if (Array.isArray(value)) return value.map(normalizeToken).filter(Boolean);
-      return String(value).split(/[,;|/\n]+/g).map(normalizeToken).filter(Boolean);
+    function splitTierSegments(text) {
+      const raw = String(text ?? '');
+      const matches = [...raw.matchAll(/T([1-4])\s*:\s*([\s\S]*?)(?=(?:T[1-4]\s*:)|$)/gi)];
+      if (!matches.length) return [{ tier: 1, body: raw }]; // no tier tag => treat as T1 baseline
+      return matches.map(m => ({ tier: Number(m[1]), body: m[2] || '' }));
     }
 
-    function normalizeTier(value) {
-      const t = normalizeToken(value).toUpperCase();
-      if (!t) return null;
-      if (TIER_RANK[t]) return t;
-      const m = t.match(/\b([1-4])\b/);
-      return m ? `T${m[1]}` : null;
+    function getColumnValues(row, candidates) {
+      return candidates
+        .map(c => row?.[c])
+        .filter(v => v !== null && v !== undefined && String(v).trim() !== '');
     }
 
-    function rowTier(row) {
-      for (const c of TIER_COLUMN_CANDIDATES) {
-        const t = normalizeTier(row?.[c]);
-        if (t) return t;
-      }
-      return null;
-    }
+    function collectTraitsForRows(rows, selectedTier) {
+      const maxTier = TIER_RANK[selectedTier] || 4;
 
-    function rowsForLabelAtTier(label, selectedTier) {
-      const maxRank = TIER_RANK[selectedTier] || 4;
-      return subclasses
-        .filter(r => formatOption(r) === label)
-        .filter(r => {
-          const t = rowTier(r);
-          return !t || TIER_RANK[t] <= maxRank;
-        });
-    }
+      const out = {
+        condAdv: new Set(),
+        condRes: new Set(),
+        condImm: new Set(),
+        dmgRes: new Set(),
+        dmgImm: new Set()
+      };
 
-    function getTraitSet(rows, candidateCols, allowedTerms) {
-      const out = new Set();
-      rows.forEach(row => {
-        candidateCols.forEach(col => {
-          parseList(row?.[col]).forEach(tok => {
-            allowedTerms.forEach(term => {
-              if (tok.includes(term)) out.add(term);
-            });
-          });
-        });
-      });
-      return out;
-    }
-
-    function getMetrics(label) {
-      const row = subclasses.find(r => formatOption(r) === label);
-      if (!row) return null;
-      return METRICS.map(m => Number(row?.[m] || 0));
-    }
-
-    function getPartyAverage(labels) {
-      const vals = labels.map(getMetrics).filter(Boolean);
-      if (!vals.length) return null;
-      const totals = vals.reduce((acc, arr) => acc.map((v, i) => v + arr[i]), [0, 0, 0, 0, 0]);
-      return totals.map(v => v / vals.length);
-    }
-
-    function getOptimiserSuggestion(labels) {
-      const currentAvg = getPartyAverage(labels);
-      if (!currentAvg) return null;
-
-      let threshold = OPTIMISER_MIN;
-      while (threshold >= 0) {
-        let best = null;
-
-        subclasses.forEach(candidateRow => {
-          const candidateLabel = formatOption(candidateRow);
-          if (labels.includes(candidateLabel)) return;
-
-          const candidateValues = METRICS.map(m => Number(candidateRow?.[m] || 0));
-          const n = labels.length;
-          const combined = currentAvg.map((v, i) => ((v * n) + candidateValues[i]) / (n + 1));
-
-          if (!combined.every(v => v > threshold)) return;
-
-          const combinedAvg = combined.reduce((a, b) => a + b, 0) / combined.length;
-          if (!best || combinedAvg > best.combinedAvg) {
-            best = { label: candidateLabel, combinedAvg, thresholdUsed: threshold };
+      for (const row of rows) {
+        for (const v of getColumnValues(row, RAW_TRAIT_COLUMNS.advantage)) {
+          for (const seg of splitTierSegments(v)) {
+            if (seg.tier > maxTier) continue;
+            const txt = norm(seg.body);
+            CONDITIONS.forEach(c => { if (txt.includes(c)) out.condAdv.add(c); });
           }
-        });
-
-        if (best) return best;
-        threshold = Number((threshold - 0.25).toFixed(2));
-      }
-      return null;
-    }
-
-    function populateClassDropdown() {
-      const classSelect = document.getElementById('classSelect');
-      const classes = [...new Set(subclasses.map(getClassName))]
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b));
-
-      classSelect.innerHTML = `<option value="">Select class...</option>${
-        classes.map(c => `<option value="${c}">${c}</option>`).join('')
-      }`;
-
-      populateSubclassDropdown('');
-    }
-
-    function populateSubclassDropdown(selectedClass) {
-      const subclassSelect = document.getElementById('subclassSelect');
-      if (!selectedClass) {
-        subclassSelect.innerHTML = `<option value="">Select subclass...</option>`;
-        return;
-      }
-
-      const labels = [...new Set(
-        subclasses
-          .filter(r => getClassName(r) === selectedClass)
-          .map(formatOption)
-      )].sort((a, b) => a.localeCompare(b));
-
-      subclassSelect.innerHTML = `<option value="">Select subclass...</option>${
-        labels.map(l => `<option value="${l}">${l}</option>`).join('')
-      }`;
-    }
-
-    async function fetchSubclasses() {
-      const response = await fetch('./subclasses.json');
-      if (!response.ok) throw new Error('Failed to load subclasses.json');
-      subclasses = await response.json();
-      populateClassDropdown();
-    }
-
-    function updateSelectedList() {
-      const el = document.getElementById('selectedList');
-      el.innerHTML = selectedSubclassLabels.map((label, idx) =>
-        `<div class="tag">${label}<button type="button" onclick="removeSubclassAt(${idx})">&times;</button></div>`
-      ).join('');
-      renderCharts();
-    }
-
-    function removeSubclassAt(index) {
-      selectedSubclassLabels.splice(index, 1);
-      updateSelectedList();
-    }
-
-    function calculateSuggestions() {
-      const container = document.getElementById('suggestionsList');
-
-      if (!selectedSubclassLabels.length) {
-        container.innerHTML = `
-          <div class="suggestion-item">
-            <div class="suggestion-title">The Optimiser's Dream</div>
-            <div class="suggestion-content">Add subclasses to get recommendations.</div>
-          </div>
-          <div class="suggestion-item">
-            <div class="suggestion-title">The Vibes Check</div>
-            <div class="suggestion-content">Add subclasses to get recommendations.</div>
-          </div>
-        `;
-        return;
-      }
-
-      const currentAvg = getPartyAverage(selectedSubclassLabels);
-      let vibes = null;
-      let minVar = Infinity;
-
-      subclasses.forEach(candidateRow => {
-        const label = formatOption(candidateRow);
-        if (selectedSubclassLabels.includes(label)) return;
-
-        const vals = METRICS.map(m => Number(candidateRow?.[m] || 0));
-        const count = selectedSubclassLabels.length + 1;
-        const combined = currentAvg.map((v, i) => (v * selectedSubclassLabels.length + vals[i]) / count);
-        const mean = combined.reduce((a, b) => a + b, 0) / combined.length;
-        const variance = combined.reduce((s, v) => s + (v - mean) ** 2, 0) / combined.length;
-
-        if (variance < minVar) {
-          minVar = variance;
-          vibes = { label, variance: variance.toFixed(2) };
         }
-      });
 
-      const opt = getOptimiserSuggestion(selectedSubclassLabels);
+        for (const v of getColumnValues(row, RAW_TRAIT_COLUMNS.resistance)) {
+          for (const seg of splitTierSegments(v)) {
+            if (seg.tier > maxTier) continue;
+            const txt = norm(seg.body);
+            CONDITIONS.forEach(c => { if (txt.includes(c)) out.condRes.add(c); });
+            DAMAGE_TYPES.forEach(d => { if (txt.includes(d)) out.dmgRes.add(d); }); // catches B/P/S in mixed fields
+          }
+        }
 
-      container.innerHTML = `
-        <div class="suggestion-item">
-          <div class="suggestion-title">The Optimiser's Dream</div>
-          <div class="suggestion-content">
-            ${opt
-              ? `${opt.label}<br/>Combined Avg: ${opt.combinedAvg.toFixed(2)}<br/>All metrics &gt; ${opt.thresholdUsed.toFixed(2)}`
-              : 'No valid subclass found, even after lowering threshold by 0.25.'}
-          </div>
-        </div>
-        <div class="suggestion-item">
-          <div class="suggestion-title">The Vibes Check</div>
-          <div class="suggestion-content">${vibes ? `${vibes.label}<br/>Variance: ${vibes.variance}` : 'N/A'}</div>
-        </div>
-      `;
-    }
+        for (const v of getColumnValues(row, RAW_TRAIT_COLUMNS.immunity)) {
+          for (const seg of splitTierSegments(v)) {
+            if (seg.tier > maxTier) continue;
+            const txt = norm(seg.body);
+            CONDITIONS.forEach(c => { if (txt.includes(c)) out.condImm.add(c); });
+            DAMAGE_TYPES.forEach(d => { if (txt.includes(d)) out.dmgImm.add(d); });
+          }
+        }
 
-    function toPolarTrace(label, values, color) {
-      const theta = [...METRIC_LABELS, METRIC_LABELS[0]];
-      const r = [...values, values[0]];
-      return {
-        type: 'scatterpolar',
-        mode: 'lines+markers',
-        name: label,
-        theta,
-        r,
-        fill: 'toself',
-        line: { color, width: 2 },
-        marker: { size: 8 },
-        hovertemplate: '<b>%{fullData.name}</b><br>%{theta}: %{r:.3f}<extra></extra>'
-      };
-    }
+        for (const v of getColumnValues(row, RAW_TRAIT_COLUMNS.damageResistance)) {
+          for (const seg of splitTierSegments(v)) {
+            if (seg.tier > maxTier) continue;
+            const txt = norm(seg.body);
+            DAMAGE_TYPES.forEach(d => { if (txt.includes(d)) out.dmgRes.add(d); });
+          }
+        }
 
-    function plotLayout() {
-      return {
-        showlegend: true,
-        margin: { l: 40, r: 40, t: 20, b: 20 },
-        polar: { radialaxis: { visible: true, range: [0, 5], tick0: 0, dtick: 1 } }
-      };
-    }
+        for (const v of getColumnValues(row, RAW_TRAIT_COLUMNS.damageImmunity)) {
+          for (const seg of splitTierSegments(v)) {
+            if (seg.tier > maxTier) continue;
+            const txt = norm(seg.body);
+            DAMAGE_TYPES.forEach(d => { if (txt.includes(d)) out.dmgImm.add(d); });
+          }
+        }
 
-    function bindPlotEvents(plotId, hoverInfoId, clickInfoId) {
-      const el = document.getElementById(plotId);
-      if (!el || el.__bound) return;
+        // Barbarian safety rule for B/P/S resistance
+        const clazz = String(row?.class ?? row?.class_name ?? '').toLowerCase();
+        if (clazz === 'barbarian') {
+          out.dmgRes.add('bludgeoning');
+          out.dmgRes.add('piercing');
+          out.dmgRes.add('slashing');
+        }
+      }
 
-      el.on('plotly_hover', (evt) => {
-        const p = evt.points?.[0];
-        if (!p) return;
-        document.getElementById(hoverInfoId).textContent =
-          `${p.fullData.name} • ${p.theta}: ${Number(p.r).toFixed(3)}`;
-      });
-
-      el.on('plotly_unhover', () => {
-        document.getElementById(hoverInfoId).textContent = 'Hover a point to inspect values.';
-      });
-
-      el.on('plotly_click', (evt) => {
-        const p = evt.points?.[0];
-        document.getElementById(clickInfoId).textContent = p
-          ? `Pinned: ${p.fullData.name} • ${p.theta}: ${Number(p.r).toFixed(3)}`
-          : 'Click a point to pin details.';
-      });
-
-      el.__bound = true;
+      return out;
     }
 
     function renderConditionMatrix() {
@@ -392,55 +227,39 @@
       }
 
       const cols = [
-        ...CONDITIONS.map(c => ({ kind: 'cond', key: c, label: `Cond • ${c[0].toUpperCase()}${c.slice(1)}` })),
-        ...DAMAGE_TYPES.map(d => ({ kind: 'dmg', key: d, label: `Dmg • ${d[0].toUpperCase()}${d.slice(1)}` }))
+        ...CONDITIONS.map(c => ({ kind: 'cond', key: c, label: `Cond • ${c}` })),
+        ...DAMAGE_TYPES.map(d => ({ kind: 'dmg', key: d, label: `Dmg • ${d}` }))
       ];
 
-      const yLabels = [...selectedSubclassLabels];
-      const xLabels = cols.map(c => c.label);
+      const y = [...selectedSubclassLabels];
+      const x = cols.map(c => c.label);
 
-      const z = yLabels.map(label => {
-        const rows = rowsForLabelAtTier(label, tier);
-
-        const condAdv = getTraitSet(rows, TRAIT_COLUMNS.advantage, CONDITIONS);
-        const condRes = getTraitSet(rows, TRAIT_COLUMNS.resistance, CONDITIONS);
-        const condImm = getTraitSet(rows, TRAIT_COLUMNS.immunity, CONDITIONS);
-
-        const dmgRes = getTraitSet(rows, [...TRAIT_COLUMNS.damageResistance, ...TRAIT_COLUMNS.resistance], DAMAGE_TYPES);
-        const dmgImm = getTraitSet(rows, [...TRAIT_COLUMNS.damageImmunity, ...TRAIT_COLUMNS.immunity], DAMAGE_TYPES);
+      const z = y.map(label => {
+        const rows = subclasses.filter(r => formatOption(r) === label);
+        const t = collectTraitsForRows(rows, tier);
 
         return cols.map(c => {
           if (c.kind === 'cond') {
-            if (condImm.has(c.key)) return 3;
-            if (condRes.has(c.key)) return 2;
-            if (condAdv.has(c.key)) return 1;
+            if (t.condImm.has(c.key)) return 3;
+            if (t.condRes.has(c.key)) return 2;
+            if (t.condAdv.has(c.key)) return 1;
             return 0;
           }
-          if (dmgImm.has(c.key)) return 3;
-          if (dmgRes.has(c.key)) return 2;
+          if (t.dmgImm.has(c.key)) return 3;
+          if (t.dmgRes.has(c.key)) return 2;
           return 0;
         });
       });
 
-      const isBarbarian = rows.some(r => (getClassName(r) || '').toLowerCase() === 'barbarian');
-      if (isBarbarian) {
-        ['bludgeoning', 'piercing', 'slashing'].forEach(d => dmgRes.add(d));
-      }
-
       Plotly.react('conditionMatrix', [{
         type: 'heatmap',
-        x: xLabels,
-        y: yLabels,
-        z,
-        zmin: 0,
-        zmax: 3,
+        x, y, z, zmin: 0, zmax: 3, showscale: false,
         colorscale: [
           [0.00, '#ffffff'],
           [0.33, '#dbeafe'],
           [0.66, '#60a5fa'],
           [1.00, '#1d4ed8']
         ],
-        showscale: false,
         hovertemplate: '<b>%{y}</b><br>%{x}<br>Level: %{z}<extra></extra>'
       }], {
         margin: { l: 180, r: 20, t: 10, b: 140 },
