@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DND Subclass Radar</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background: #f4f4f4; color: #1f2937; }
+    h1 { margin-bottom: 16px; }
+    .card { background: #fff; border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08); padding: 20px; max-width: 960px; margin-bottom: 24px; }
+    .search-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    #subclassSearch { flex: 1; min-width: 240px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; }
+    button { padding: 10px 14px; border: none; border-radius: 8px; background: #2563eb; color: #fff; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    #selectedList { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 10px; }
+    .tag { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #e2e8f0; border-radius: 999px; }
+    .tag button { background: transparent; color: #1f2937; padding: 0 4px; border: none; cursor: pointer; font-size: 16px; }
+    .chart-grid { display: grid; gap: 24px; grid-template-columns: 1fr 1fr; }
+    .suggestions-panel { display: flex; flex-direction: column; gap: 16px; }
+    .suggestion-item { padding: 12px; background: #f9fafb; border-left: 4px solid #2563eb; border-radius: 4px; }
+    .suggestion-title { font-weight: 600; margin-bottom: 6px; color: #1f2937; }
+    .suggestion-content { font-size: 0.9rem; color: #475569; }
+    .chart-card { min-height: 500px; position: relative; }
+    .chart-card canvas { width: 100% !important; height: 420px !important; }
+    .chart-title { margin-bottom: 12px; font-size: 1.1rem; font-weight: 600; }
+    .caption { margin-top: 12px; color: #475569; }
+    .hover-info {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: #eef2ff;
+      color: #1e3a8a;
+      font-size: 0.95rem;
+    }
+    .click-info {
+      margin-top: 8px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: #ecfeff;
+      color: #155e75;
+      font-size: 0.95rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>DND Subclass Radar</h1>
+  <div class="card">
+    <p>Select one or more subclasses from the searchable dropdown. Only unique subclasses are shown, merged across youtubers.</p>
+    <div class="search-row">
+      <input id="subclassSearch" list="subclassOptions" placeholder="Search subclass or class..." autocomplete="off" />
+      <button id="addSubclassButton" type="button">Add subclass</button>
+    </div>
+    <datalist id="subclassOptions"></datalist>
+    <div id="selectedList"></div>
+    <p class="caption">Tip: type "Base Barbarian" and add it to the selected list.</p>
+  </div>
+
+  <div class="chart-grid">
+    <div class="card chart-card">
+      <div class="chart-title">Subclass scores</div>
+      <div id="radarChartAvg" style="width:100%;height:420px;"></div>
+      <div id="hoverInfoAvg" class="hover-info">Hover a radar point to inspect values.</div>
+      <div id="clickInfoAvg" class="click-info">Click a point to pin details.</div>
+      <p id="chartMessageAvg" class="caption"></p>
+    </div>
+
+    <div class="card chart-card">
+      <div class="chart-title">Average of selected subclasses</div>
+      <div id="radarChartSum" style="width:100%;height:420px;"></div>
+      <div id="hoverInfoSum" class="hover-info">Hover a radar point to inspect values.</div>
+      <div id="clickInfoSum" class="click-info">Click a point to pin details.</div>
+      <p id="chartMessageSum" class="caption"></p>
+    </div>
+
+    <div class="card suggestions-panel">
+      <div class="chart-title">Joining Player Suggestions</div>
+      <div id="suggestionsList" style="display: flex; flex-direction: column; gap: 12px;"></div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = '/api';
+    const METRICS = ['damage', 'survivability', 'support', 'control', 'utility'];
+    const METRIC_LABELS = ['Damage', 'Survivability', 'Support', 'Control', 'Utility'];
+    const OPTIMISER_MIN = 3.5;
+    let subclasses = [];
+    let selectedSubclassLabels = [];
+    // remove: let avgChart; let sumChart;
+
+    function formatOption(row) {
+      return `${row.subclass} (${row.class})`;
+    }
+
+    async function fetchSubclasses() {
+      const response = await fetch(`${API_BASE}/subclasses`);
+      if (!response.ok) throw new Error('Failed to load subclass data');
+      subclasses = await response.json();
+      // Unit test for Base Warlock average damage
+      const baseWarlockEntries = subclasses.filter(r => r.subclass === 'Base Warlock');
+      if (baseWarlockEntries.length > 0) {
+        console.log('Base Warlock source entries:', JSON.stringify(baseWarlockEntries, null, 2));
+        const avgDamage = baseWarlockEntries.reduce((sum, r) => sum + r.damage, 0) / baseWarlockEntries.length;
+        console.log(`Base Warlock average damage: ${avgDamage.toFixed(3)} (expected: 4.25)`);
+        if (Math.abs(avgDamage - 4.25) > 0.001) {
+          throw new Error(`Base Warlock average mismatch: actual ${avgDamage.toFixed(3)}, expected 4.25`);
+        }
+      }
+      const seen = new Set();
+      const options = [];
+      subclasses.forEach(row => {
+        const label = formatOption(row);
+        if (!seen.has(label)) {
+          seen.add(label);
+          options.push(label);
+        }
+      });
+      document.getElementById('subclassOptions').innerHTML = options
+        .map(label => `<option value="${label}">`)
+        .join('');
+    }
+
+    function findSubclass(value) {
+      const normalized = value.trim().toLowerCase();
+      if (!normalized) return null;
+      const exact = subclasses.find(row => {
+        const full = formatOption(row).toLowerCase();
+        return full === normalized || row.subclass.toLowerCase() === normalized || row.class.toLowerCase() === normalized;
+      });
+      if (exact) return exact;
+      return subclasses.find(row => {
+        const full = formatOption(row).toLowerCase();
+        return full.includes(normalized) || row.subclass.toLowerCase().includes(normalized) || row.class.toLowerCase().includes(normalized);
+      });
+    }
+
+    function updateSelectedList() {
+      document.getElementById('selectedList').innerHTML = selectedSubclassLabels
+        .map(label => {
+          const escaped = label.replace(/'/g, "\\'");
+          return `
+            <div class="tag">
+              ${label}
+              <button type="button" aria-label="Remove ${label}" onclick="removeSubclass('${escaped}')">&times;</button>
+            </div>
+          `;
+        })
+        .join('');
+      renderCharts();
+    }
+
+    function removeSubclass(label) {
+      selectedSubclassLabels = selectedSubclassLabels.filter(item => item !== label);
+      updateSelectedList();
+    }
+
+    function calculateSuggestions() {
+      let vibesCheck = null;
+      let minCombinedVariance = Infinity;
+
+      if (selectedSubclassLabels.length === 0) {
+        document.getElementById('suggestionsList').innerHTML = `
+          <div class="suggestion-item">
+            <div class="suggestion-title">The Optimiser's Dream</div>
+            <div class="suggestion-content">Add subclasses to get recommendations</div>
+          </div>
+          <div class="suggestion-item">
+            <div class="suggestion-title">The Vibes Check</div>
+            <div class="suggestion-content">Add subclasses to get recommendations</div>
+          </div>
+        `;
+        return;
+      }
+
+      const currentValues = getPartyAverage(selectedSubclassLabels);
+
+      subclasses.forEach(candidateRow => {
+        const candidateLabel = formatOption(candidateRow);
+        if (selectedSubclassLabels.includes(candidateLabel)) return;
+
+        const candidateValues = METRICS.map(m => Number(candidateRow[m] || 0));
+        const combinedCount = selectedSubclassLabels.length + 1;
+        const combinedValues = currentValues.map((v, i) => (v * selectedSubclassLabels.length + candidateValues[i]) / combinedCount);
+        const mean = combinedValues.reduce((a, b) => a + b, 0) / METRICS.length;
+        const variance = combinedValues.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / METRICS.length;
+
+        if (variance < minCombinedVariance) {
+          minCombinedVariance = variance;
+          vibesCheck = { label: candidateLabel, variance: variance.toFixed(2) };
+        }
+      });
+
+      const optimiser = getOptimiserSuggestion(selectedSubclassLabels);
+
+      document.getElementById('suggestionsList').innerHTML = `
+        <div class="suggestion-item">
+          <div class="suggestion-title">The Optimiser's Dream</div>
+          <div class="suggestion-content">
+            ${optimiser
+              ? `${optimiser.label}<br/>Combined Avg: ${optimiser.combinedAvg.toFixed(2)}<br/>All metrics > ${optimiser.thresholdUsed.toFixed(2)}`
+              : `No valid subclass found, even after lowering threshold by 0.25 steps.`}
+          </div>
+        </div>
+        <div class="suggestion-item">
+          <div class="suggestion-title">The Vibes Check</div>
+          <div class="suggestion-content">${vibesCheck ? `${vibesCheck.label}<br/>Variance: ${vibesCheck.variance}` : 'N/A'}</div>
+        </div>
+      `;
+    }
+
+    function getMetrics(label) {
+      const row = subclasses.find(r => formatOption(r) === label);
+      if (!row) return null;
+      return METRICS.map(metric => Number(row[metric] || 0));
+    }
+
+    function getPartyAverage(labels) {
+      const selectedMetrics = labels.map(getMetrics).filter(Boolean);
+      if (!selectedMetrics.length) return null;
+      return selectedMetrics
+        .reduce((totals, values) => totals ? totals.map((v, i) => v + values[i]) : [...values], null)
+        .map(v => v / selectedMetrics.length);
+    }
+
+    function getOptimiserSuggestion(labels) {
+      const currentAvg = getPartyAverage(labels);
+      if (!currentAvg) return null;
+
+      let threshold = OPTIMISER_MIN;
+
+      while (threshold >= 0) {
+        let best = null;
+
+        subclasses.forEach(candidateRow => {
+          const candidateLabel = formatOption(candidateRow);
+          if (labels.includes(candidateLabel)) return;
+
+          const candidateValues = METRICS.map(m => Number(candidateRow[m] || 0));
+          const n = labels.length;
+          const combined = currentAvg.map((v, i) => ((v * n) + candidateValues[i]) / (n + 1));
+
+          // Must satisfy ALL metrics at current threshold
+          if (!combined.every(v => v > threshold)) return;
+
+          const combinedAvg = combined.reduce((a, b) => a + b, 0) / combined.length;
+          if (!best || combinedAvg > best.combinedAvg) {
+            best = { label: candidateLabel, combinedAvg };
+          }
+        });
+
+        if (best) {
+          return { ...best, thresholdUsed: threshold };
+        }
+
+        threshold = Number((threshold - 0.25).toFixed(2));
+      }
+
+      return null;
+    }
+
+    function runOptimiserUnitTest() {
+      const baseCleric = subclasses.find(r => r.subclass.toLowerCase() === 'base cleric');
+      if (!baseCleric) return;
+      const result = getOptimiserSuggestion([formatOption(baseCleric)]);
+      if (result && result.label.toLowerCase().startsWith('base paladin')) {
+        throw new Error('Unit test failed: Base Cleric should NOT suggest Base Paladin.');
+      }
+    }
+
+    function buildRadarOptions(hoverInfoId, clickInfoId) {
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'nearest', intersect: false, axis: 'r' },
+        onHover: (event, activeElements, chart) => {
+          const info = document.getElementById(hoverInfoId);
+          event.native.target.style.cursor = activeElements.length ? 'pointer' : 'default';
+          if (!info) return;
+          if (!activeElements.length) {
+            info.textContent = 'Hover a radar point to inspect values.';
+            return;
+          }
+          const { datasetIndex, index } = activeElements[0];
+          const ds = chart.data.datasets[datasetIndex];
+          const metric = chart.data.labels[index];
+          const value = ds.data[index];
+          info.textContent = `${ds.label} • ${metric}: ${Number(value).toFixed(3)}`;
+        },
+        onClick: (event, _activeElements, chart) => {
+          const clickInfo = document.getElementById(clickInfoId);
+          if (!clickInfo) return;
+
+          // Exact point click only
+          const exactPoints = chart.getElementsAtEventForMode(
+            event,
+            'point',
+            { intersect: true },
+            true
+          );
+
+          if (!exactPoints.length) {
+            clickInfo.textContent = 'Click directly on a point to pin details.';
+            return;
+          }
+
+          const { datasetIndex, index } = exactPoints[0];
+          const ds = chart.data.datasets[datasetIndex];
+          const metric = chart.data.labels[index];
+          const value = ds.data[index];
+          clickInfo.textContent = `Pinned: ${ds.label} • ${metric}: ${Number(value).toFixed(3)}`;
+        },
+        elements: { point: { radius: 6, hoverRadius: 9, hitRadius: 18 } },
+        scales: { r: { beginAtZero: true, min: 0, max: 5, ticks: { precision: 0, stepSize: 1 } } },
+        plugins: {
+          legend: { position: 'top' },
+          tooltip: {
+            enabled: true,
+            callbacks: {
+              label: (context) => `${context.dataset.label}: ${Number(context.parsed?.r ?? context.raw).toFixed(3)}`
+            }
+          }
+        }
+      };
+    }
+
+    function toPolarTrace(label, values, color) {
+      const theta = [...METRIC_LABELS, METRIC_LABELS[0]];
+      const r = [...values, values[0]];
+      return {
+        type: 'scatterpolar',
+        mode: 'lines+markers',
+        name: label,
+        theta,
+        r,
+        fill: 'toself',
+        line: { color, width: 2 },
+        marker: { size: 8 },
+        customdata: theta.map((metric, i) => ({ metric, value: r[i], label })),
+        hovertemplate: '<b>%{fullData.name}</b><br>%{theta}: %{r:.3f}<extra></extra>'
+      };
+    }
+
+    function plotLayout(title) {
+      return {
+        showlegend: true,
+        margin: { l: 40, r: 40, t: 20, b: 20 },
+        polar: {
+          radialaxis: {
+            visible: true,
+            range: [0, 5],
+            tick0: 0,
+            dtick: 1
+          }
+        }
+      };
+    }
+
+    function bindPlotEvents(plotId, hoverInfoId, clickInfoId) {
+      const el = document.getElementById(plotId);
+      if (!el || el.__bound) return;
+
+      el.on('plotly_hover', (evt) => {
+        const p = evt.points?.[0];
+        if (!p) return;
+        document.getElementById(hoverInfoId).textContent =
+          `${p.fullData.name} • ${p.theta}: ${Number(p.r).toFixed(3)}`;
+      });
+
+      el.on('plotly_unhover', () => {
+        document.getElementById(hoverInfoId).textContent =
+          'Hover a radar point to inspect values.';
+      });
+
+      el.on('plotly_click', (evt) => {
+        const p = evt.points?.[0];
+        if (!p) {
+          document.getElementById(clickInfoId).textContent =
+            'Click a point to pin details.';
+          return;
+        }
+        document.getElementById(clickInfoId).textContent =
+          `Pinned: ${p.fullData.name} • ${p.theta}: ${Number(p.r).toFixed(3)}`;
+      });
+
+      el.__bound = true;
+    }
+
+    function renderCharts() {
+      const palette = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#a855f7', '#0ea5e9', '#eab308', '#f97316', '#ec4899'];
+
+      const averageDatasets = selectedSubclassLabels
+        .map((label) => ({ label, values: getMetrics(label) }))
+        .filter(x => x.values);
+
+      const selectedMetrics = selectedSubclassLabels.map(getMetrics).filter(Boolean);
+      const averageSelectedValues = selectedMetrics.length
+        ? selectedMetrics
+            .reduce((totals, values) => {
+              if (!totals) return [...values];
+              return totals.map((value, idx) => value + values[idx]);
+            }, null)
+            .map(value => value / selectedMetrics.length)
+        : [];
+
+      const avgMessage = document.getElementById('chartMessageAvg');
+      const sumMessage = document.getElementById('chartMessageSum');
+
+      calculateSuggestions();
+
+      if (!averageDatasets.length) {
+        avgMessage.textContent = 'Add one or more subclasses to see averaged scores across youtubers.';
+        sumMessage.textContent = 'Add one or more subclasses to see averaged subclass values.';
+        Plotly.purge('radarChartAvg');
+        Plotly.purge('radarChartSum');
+        return;
+      }
+
+      avgMessage.textContent = '';
+      sumMessage.textContent = '';
+
+      const avgTraces = averageDatasets.map((d, i) => toPolarTrace(d.label, d.values, palette[i % palette.length]));
+      const sumTrace = toPolarTrace('Average of selected subclasses', averageSelectedValues, '#10b981');
+
+      Plotly.react('radarChartAvg', avgTraces, plotLayout('Subclass scores'), { responsive: true, displayModeBar: true });
+      Plotly.react('radarChartSum', [sumTrace], plotLayout('Average of selected subclasses'), { responsive: true, displayModeBar: true });
+
+      bindPlotEvents('radarChartAvg', 'hoverInfoAvg', 'clickInfoAvg');
+      bindPlotEvents('radarChartSum', 'hoverInfoSum', 'clickInfoSum');
+    }
+
+    document.getElementById('addSubclassButton').addEventListener('click', () => {
+      const input = document.getElementById('subclassSearch');
+      const row = findSubclass(input.value);
+      if (!row) {
+        alert('No matching subclass found. Try typing the subclass or class name exactly.');
+        return;
+      }
+      const label = formatOption(row);
+      selectedSubclassLabels.push(label);
+      updateSelectedList();
+      input.value = '';
+      input.focus();
+    });
+
+    window.removeSubclass = removeSubclass;
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      try {
+        await fetchSubclasses();
+        runOptimiserUnitTest();
+        renderCharts();
+      } catch (error) {
+        document.body.innerHTML = `
+          <div style="padding:24px; max-width:720px; margin: 40px auto; font-family: Arial, sans-serif; color: #1f2937;">
+            <h1 style="font-size:1.8rem; margin-bottom: 16px;">Data validation failed</h1>
+            <p style="font-size:1rem; line-height:1.6;">${error.message}</p>
+            <p style="font-size:0.95rem; color:#475569;">The page will not continue loading until the Warlock average matches the expected value.</p>
+          </div>`;
+        console.error(error);
+      }
+    });
+  </script>
+  <footer style="text-align: center; font-size: 0.8em; margin-top: 20px; color: #666;">
+    <p>Subclass rankings sourced from D4 D&amp;D Deep Dive and Treantmonk's Temple.</p>
+    <p>&copy; Kyle Drover — Design & Development.</p>
+  </footer>
+</body>
+</html>
