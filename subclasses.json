@@ -521,7 +521,7 @@
     "control": 2.05,
     "utility": 2.25,
     "inflictions": null,
-    "resistances": "T1: Bludgeoning, Piercing, Slashing",
+    "resistances": "T1: Bludgeoning, Piercing, Slashing, Acid, Cold, Fire, Lightning, Poison, Thunder",
     "immunity": null,
     "resistance_ignorance": null,
     "defensive_advantages": "T1: Adv on Dex saves"
