@@ -43,13 +43,12 @@
     }
     .help-button:hover, .help-button:focus-visible { background: #bfdbfe; outline: none; }
     .help-popover {
-      position: absolute; top: calc(100% + 8px); right: 0; width: min(280px, 80vw); padding: 10px 12px; border-radius: 10px;
+      position: absolute; top: auto; bottom: calc(100% + 8px); right: 0; width: min(280px, 80vw); padding: 10px 12px; border-radius: 10px;
       background: #0f172a; color: #f8fafc; font-size: .84rem; line-height: 1.45; box-shadow: 0 10px 28px rgba(15, 23, 42, .28);
-      opacity: 0; visibility: hidden; transform: translateY(-4px); transition: opacity .16s ease, transform .16s ease, visibility .16s ease;
+      opacity: 0; visibility: hidden; transform: translateY(4px); transition: opacity .16s ease, transform .16s ease, visibility .16s ease;
       z-index: 20;
     }
     .help-popover.align-left { left: 0; right: auto; }
-    .help-popover.align-up { top: auto; bottom: calc(100% + 8px); transform: translateY(4px); }
     .help-wrap:hover .help-popover, .help-wrap:focus-within .help-popover { opacity: 1; visibility: visible; transform: translateY(0); }
     .suggestion-columns { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
     .suggestion-column { padding: 10px 12px; border-radius: 10px; background: #ffffff; border: 1px solid #e2e8f0; }
@@ -244,16 +243,30 @@
       return Number.isFinite(numericValue) ? numericValue : null;
     }
 
+    function hasCompleteMetricValues(row) {
+      return METRICS.every(metric => getNumericMetricValue(row, metric) !== null);
+    }
+
+    function getSuggestionDataset(dataset = subclasses) {
+      return dataset.filter(hasCompleteMetricValues);
+    }
+
+    function isUaRow(row) {
+      const rawValue = row?.ua;
+      if (typeof rawValue === 'boolean') return rawValue;
+      if (typeof rawValue === 'number') return rawValue === 1;
+      return String(rawValue || '').trim().toLowerCase() === 'true';
+    }
+
     function updateHelpPopoverPositions() {
       document.querySelectorAll('.help-wrap').forEach((wrap) => {
         const popover = wrap.querySelector('.help-popover');
         if (!popover) return;
 
-        popover.classList.remove('align-left', 'align-up');
+        popover.classList.remove('align-left');
 
         const rect = popover.getBoundingClientRect();
         if (rect.right > window.innerWidth - 12) popover.classList.add('align-left');
-        if (rect.bottom > window.innerHeight - 12) popover.classList.add('align-up');
       });
     }
 
@@ -631,10 +644,12 @@
         return;
       }
 
-      const optimiserRaw = getOptimiserSuggestion(selectedSubclassLabels, subclasses);
-      const optimiserNormalized = getOptimiserSuggestion(selectedSubclassLabels, normalizedSubclasses);
-      const vibesRaw = getVibesSuggestion(selectedSubclassLabels, subclasses);
-      const vibesNormalized = getVibesSuggestion(selectedSubclassLabels, normalizedSubclasses);
+      const rawSuggestionDataset = getSuggestionDataset(subclasses);
+      const normalizedSuggestionDataset = getSuggestionDataset(normalizedSubclasses);
+      const optimiserRaw = getOptimiserSuggestion(selectedSubclassLabels, rawSuggestionDataset);
+      const optimiserNormalized = getOptimiserSuggestion(selectedSubclassLabels, normalizedSuggestionDataset);
+      const vibesRaw = getVibesSuggestion(selectedSubclassLabels, rawSuggestionDataset);
+      const vibesNormalized = getVibesSuggestion(selectedSubclassLabels, normalizedSuggestionDataset);
 
       list.innerHTML = `
         <div class="suggestion-item">
@@ -705,7 +720,7 @@
       const container = document.getElementById('combinationPanelContent');
       if (!container) return;
 
-      const totalSubclasses = getCandidateLabels(subclasses).length;
+      const totalSubclasses = getCandidateLabels(subclasses.filter(row => !isUaRow(row))).length;
       const partySizes = Array.from({ length: 8 }, (_, index) => index + 2);
 
       container.innerHTML = `
