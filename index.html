@@ -58,6 +58,10 @@
     .combo-table th, .combo-table td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; text-align: center; }
     .combo-table th { background: #f8fafc; color: #334155; font-weight: 700; }
     .combo-table td:first-child, .combo-table th:first-child { text-align: left; position: sticky; left: 0; background: #fff; }
+    .benchmark-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+    .benchmark-table th, .benchmark-table td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; text-align: center; }
+    .benchmark-table th { background: #f8fafc; color: #334155; font-weight: 700; }
+    .benchmark-table td:first-child, .benchmark-table th:first-child { text-align: left; }
 
     @media (max-width: 980px) { .chart-grid { grid-template-columns: 1fr; } }
     @media (max-width: 760px) { .suggestion-columns { grid-template-columns: 1fr; } }
@@ -143,15 +147,15 @@
     </div>
   </div>
 
-  <div id="combinationCard" class="card">
+  <div id="benchmarkingCard" class="card">
     <div class="chart-title section-heading">
-      <span>Combination Counts</span>
+      <span>Benchmarking</span>
       <span class="help-wrap">
-        <button type="button" class="help-button" aria-label="Combination counts help">?</button>
-        <span class="help-popover">This panel uses combinations, not permutations. Each value shows the number of unordered selections computed with n choose r for n from 2 to 9.</span>
+        <button type="button" class="help-button" aria-label="Benchmarking help">?</button>
+        <span class="help-popover">This panel ranks non-UA subclasses by their total and average raw scores, then shows those benchmark values for the subclasses currently selected in the party.</span>
       </span>
     </div>
-    <div id="combinationPanelContent"></div>
+    <div id="benchmarkingPanelContent"></div>
   </div>
 
   <footer style="text-align:center; font-size:.8em; margin-top:20px; color:#666;">
@@ -209,6 +213,7 @@
 
     let subclasses = [];
     let normalizedSubclasses = [];
+    let benchmarks = new Map();
     let selectedSubclassLabels = [];
     let onlyIncludeCalculatedValues = true;
 
@@ -451,21 +456,67 @@
       return dataset.filter(row => formatOption(row) === label);
     }
 
-    function getAverageMetricsForRows(rows) {
+    function getAverageMetricsForRows(rows, { requireAll = false } = {}) {
       if (!rows.length) return null;
-      return METRICS.map(metric => {
+
+      const metrics = [];
+      for (const metric of METRICS) {
         const values = rows.map(row => getNumericMetricValue(row, metric)).filter(Number.isFinite);
-        if (!values.length) return 0;
-        return roundScore(values.reduce((sum, value) => sum + value, 0) / values.length);
-      });
+        if (!values.length) {
+          if (requireAll) return null;
+          metrics.push(0);
+          continue;
+        }
+
+        metrics.push(roundScore(values.reduce((sum, value) => sum + value, 0) / values.length));
+      }
+
+      return metrics;
     }
 
-    function getMetrics(label, dataset = subclasses) {
-      return getAverageMetricsForRows(getRowsForLabel(label, dataset));
+    function getMetrics(label, dataset = subclasses, options = {}) {
+      return getAverageMetricsForRows(getRowsForLabel(label, dataset), options);
     }
 
     function getCandidateLabels(dataset = subclasses) {
       return [...new Set(dataset.map(formatOption))];
+    }
+
+    function formatOrdinal(value) {
+      const mod100 = value % 100;
+      if (mod100 >= 11 && mod100 <= 13) return `${value}th`;
+
+      const mod10 = value % 10;
+      if (mod10 === 1) return `${value}st`;
+      if (mod10 === 2) return `${value}nd`;
+      if (mod10 === 3) return `${value}rd`;
+      return `${value}th`;
+    }
+
+    function assignRank(entries, key, rankKey) {
+      [...entries]
+        .sort((a, b) => (b[key] - a[key]) || a.label.localeCompare(b.label))
+        .forEach((entry, index) => {
+          entry[rankKey] = index + 1;
+        });
+    }
+
+    function buildBenchmarkDataset() {
+      const entries = getCandidateLabels(subclasses.filter(row => !isUaRow(row)))
+        .map(label => {
+          const metrics = getMetrics(label, subclasses, { requireAll: true });
+          if (!metrics) return null;
+
+          const total = roundScore(metrics.reduce((sum, value) => sum + value, 0));
+          const average = roundScore(total / METRICS.length);
+          return { label, total, average };
+        })
+        .filter(Boolean);
+
+      assignRank(entries, 'total', 'totalRank');
+      assignRank(entries, 'average', 'averageRank');
+
+      return new Map(entries.map(entry => [entry.label, entry]));
     }
 
     function getPartyAverage(labels, dataset = subclasses) {
@@ -700,54 +751,53 @@
         .replace(/'/g, '&#39;');
     }
 
-    function combinationBigInt(n, r) {
-      if (r < 0 || r > n) return 0n;
-      if (r === 0 || r === n) return 1n;
-
-      const k = Math.min(r, n - r);
-      let result = 1n;
-      for (let i = 1; i <= k; i += 1) {
-        result = (result * BigInt(n - (k - i))) / BigInt(i);
-      }
-      return result;
-    }
-
-    function formatBigInt(value) {
-      return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    }
-
-    function renderCombinationPanel() {
-      const container = document.getElementById('combinationPanelContent');
+    function renderBenchmarkingPanel() {
+      const container = document.getElementById('benchmarkingPanelContent');
       if (!container) return;
 
-      const totalSubclasses = getCandidateLabels(subclasses.filter(row => !isUaRow(row))).length;
-      const partySizes = Array.from({ length: 8 }, (_, index) => index + 2);
+      if (!selectedSubclassLabels.length) {
+        container.innerHTML = '<p class="caption">Add subclasses to compare their benchmark totals, averages, and ranks.</p>';
+        updateHelpPopoverPositions();
+        return;
+      }
+
+      const rows = selectedSubclassLabels.map((label, index) => {
+        const entry = benchmarks.get(label);
+        return {
+          rowLabel: `${index + 1}. ${label}`,
+          total: entry ? entry.total.toFixed(2) : 'N/A',
+          average: entry ? entry.average.toFixed(2) : 'N/A',
+          totalRank: entry ? formatOrdinal(entry.totalRank) : 'N/A',
+          averageRank: entry ? formatOrdinal(entry.averageRank) : 'N/A'
+        };
+      });
 
       container.innerHTML = `
         <div class="combo-table-wrap">
-          <table class="combo-table">
+          <table class="benchmark-table">
             <thead>
               <tr>
-                <th>Party size r</th>
-                <th>Total subclasses n</th>
-                <th>Combinations C(n, r)</th>
+                <th>Selected subclass</th>
+                <th>Total</th>
+                <th>Total rank</th>
+                <th>Average</th>
+                <th>Average rank</th>
               </tr>
             </thead>
             <tbody>
-              ${partySizes.map(r => {
-                const count = r <= totalSubclasses ? combinationBigInt(totalSubclasses, r) : 0n;
-                return `
-                  <tr>
-                    <td>${r}</td>
-                    <td>${totalSubclasses}</td>
-                    <td>${formatBigInt(count)}</td>
-                  </tr>
-                `;
-              }).join('')}
+              ${rows.map(row => `
+                <tr>
+                  <td>${escapeHtml(row.rowLabel)}</td>
+                  <td>${row.total}</td>
+                  <td>${row.totalRank}</td>
+                  <td>${row.average}</td>
+                  <td>${row.averageRank}</td>
+                </tr>
+              `).join('')}
             </tbody>
           </table>
         </div>
-        <p class="caption">Counts use the total unique subclass count as n and the party size as r.</p>
+        <p class="caption">Benchmarks are computed from non-UA subclasses using raw scores, then ranked from highest to lowest.</p>
       `;
 
       updateHelpPopoverPositions();
@@ -824,6 +874,7 @@
 
     function renderCharts() {
       calculateSuggestions();
+      renderBenchmarkingPanel();
 
       const avgMessage = document.getElementById('chartMessageAvg');
       const sumMessage = document.getElementById('chartMessageSum');
@@ -1055,9 +1106,9 @@
 
       subclasses = usable;
       normalizedSubclasses = normalizeSuggestionRows(subclasses);
+      benchmarks = buildBenchmarkDataset();
       assertSuggestionNormalization(subclasses, normalizedSubclasses);
       renderMetricHelpRow();
-      renderCombinationPanel();
       populateClassDropdown();
       syncRadarVisibility();
       runDataSanityChecks(subclasses);
