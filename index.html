@@ -484,34 +484,37 @@
       return [...new Set(dataset.map(formatOption))];
     }
 
-    function formatOrdinal(value) {
+    function formatOrdinal(value, isTied = false) {
       const mod100 = value % 100;
-      if (mod100 >= 11 && mod100 <= 13) return `${value}th`;
+      if (mod100 >= 11 && mod100 <= 13) return `${isTied ? '=' : ''}${value}th`;
 
       const mod10 = value % 10;
-      if (mod10 === 1) return `${value}st`;
-      if (mod10 === 2) return `${value}nd`;
-      if (mod10 === 3) return `${value}rd`;
-      return `${value}th`;
+      if (mod10 === 1) return `${isTied ? '=' : ''}${value}st`;
+      if (mod10 === 2) return `${isTied ? '=' : ''}${value}nd`;
+      if (mod10 === 3) return `${isTied ? '=' : ''}${value}rd`;
+      return `${isTied ? '=' : ''}${value}th`;
     }
 
     function assignRank(entries, key, rankKey) {
-      let previousValue = null;
-      let previousRank = 0;
+      const sortedEntries = [...entries]
+        .sort((a, b) => (b[key] - a[key]) || a.label.localeCompare(b.label));
 
-      [...entries]
-        .sort((a, b) => (b[key] - a[key]) || a.label.localeCompare(b.label))
-        .forEach((entry, index) => {
-          if (previousValue !== null && entry[key] === previousValue) {
-            entry[rankKey] = previousRank;
-            return;
-          }
+      let index = 0;
+      while (index < sortedEntries.length) {
+        const startIndex = index;
+        const currentValue = sortedEntries[index][key];
 
-          const rank = index + 1;
-          entry[rankKey] = rank;
-          previousValue = entry[key];
-          previousRank = rank;
-        });
+        while (index < sortedEntries.length && sortedEntries[index][key] === currentValue) {
+          index += 1;
+        }
+
+        const rank = startIndex + 1;
+        const isTied = (index - startIndex) > 1;
+        for (let groupIndex = startIndex; groupIndex < index; groupIndex += 1) {
+          sortedEntries[groupIndex][rankKey] = rank;
+          sortedEntries[groupIndex][`${rankKey}Tied`] = isTied;
+        }
+      }
     }
 
     function buildBenchmarkDataset() {
@@ -784,8 +787,8 @@
           rowLabel: `${index + 1}. ${label}`,
           maxScore: entry ? entry.maxScore.toFixed(2) : 'N/A',
           average: entry ? entry.average.toFixed(2) : 'N/A',
-          maxScoreRank: entry ? formatOrdinal(entry.maxScoreRank) : 'N/A',
-          averageRank: entry ? formatOrdinal(entry.averageRank) : 'N/A'
+          maxScoreRank: entry ? formatOrdinal(entry.maxScoreRank, entry.maxScoreRankTied) : 'N/A',
+          averageRank: entry ? formatOrdinal(entry.averageRank, entry.averageRankTied) : 'N/A'
         };
       });
 
