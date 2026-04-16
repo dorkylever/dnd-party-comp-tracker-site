@@ -738,6 +738,53 @@
       subclassSelect.disabled = labels.length === 0;
     }
 
+    const SCORE_FIELDS = ['damage', 'survivability', 'support', 'control', 'utility'];
+
+    function roundScore(value) {
+      return Math.round(value * 1000) / 1000;
+    }
+
+    function normalizeLoadedScores(rows) {
+      const groups = new Map();
+
+      for (const row of rows) {
+        const groupKey = JSON.stringify([
+          getClassName(row).trim().toLowerCase(),
+          String(row.youtuber || '').trim().toLowerCase()
+        ]);
+
+        if (!groups.has(groupKey)) groups.set(groupKey, []);
+        groups.get(groupKey).push(row);
+      }
+
+      for (const groupRows of groups.values()) {
+        let maxScore = null;
+
+        for (const row of groupRows) {
+          for (const field of SCORE_FIELDS) {
+            const value = Number(row[field]);
+            if (Number.isFinite(value)) {
+              maxScore = maxScore === null ? value : Math.max(maxScore, value);
+            }
+          }
+        }
+
+        if (maxScore === null || maxScore <= 5) continue;
+
+        const scaleFactor = 5 / maxScore;
+        for (const row of groupRows) {
+          for (const field of SCORE_FIELDS) {
+            const value = Number(row[field]);
+            if (Number.isFinite(value)) {
+              row[field] = roundScore(value * scaleFactor);
+            }
+          }
+        }
+      }
+
+      return rows;
+    }
+
     async function fetchSubclasses() {
       const response = await fetch('./subclasses.json', { cache: 'no-store' });
       if (!response.ok) throw new Error(`Failed to load subclasses.json (${response.status})`);
@@ -750,7 +797,7 @@
 
       if (!rows.length) throw new Error('subclasses.json loaded but contains zero rows.');
 
-      subclasses = rows.map(r => ({
+      subclasses = normalizeLoadedScores(rows).map(r => ({
         ...r,
         class: getClassName(r),
         subclass: getSubclassName(r)
