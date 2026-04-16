@@ -744,14 +744,15 @@
       return Math.round(value * 1000) / 1000;
     }
 
+    function getNormalizationGroupKey(row) {
+      return String(row.youtuber || '').trim().toLowerCase();
+    }
+
     function normalizeLoadedScores(rows) {
       const groups = new Map();
 
       for (const row of rows) {
-        const groupKey = JSON.stringify([
-          getClassName(row).trim().toLowerCase(),
-          String(row.youtuber || '').trim().toLowerCase()
-        ]);
+        const groupKey = getNormalizationGroupKey(row);
 
         if (!groups.has(groupKey)) groups.set(groupKey, []);
         groups.get(groupKey).push(row);
@@ -781,10 +782,7 @@
       const groups = new Map();
 
       for (const row of rows) {
-        const groupKey = JSON.stringify([
-          getClassName(row).trim().toLowerCase(),
-          String(row.youtuber || '').trim().toLowerCase()
-        ]);
+        const groupKey = getNormalizationGroupKey(row);
 
         if (!groups.has(groupKey)) groups.set(groupKey, []);
         groups.get(groupKey).push(row);
@@ -800,8 +798,7 @@
 
           const maxValue = Math.max(...numericValues);
           if (maxValue !== 5) {
-            const [groupClass, groupYoutuber] = JSON.parse(groupKey);
-            throw new Error(`Normalization assertion failed for ${groupClass} / ${groupYoutuber} / ${field}: max is ${maxValue}, expected 5.`);
+            throw new Error(`Normalization assertion failed for ${groupKey || 'unknown youtuber'} / ${field}: max is ${maxValue}, expected 5.`);
           }
         }
       }
