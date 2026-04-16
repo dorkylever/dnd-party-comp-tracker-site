@@ -214,6 +214,7 @@
     let subclasses = [];
     let normalizedSubclasses = [];
     let benchmarks = new Map();
+    let benchmarkEligibleLabels = new Set();
     let selectedSubclassLabels = [];
     let onlyIncludeCalculatedValues = true;
 
@@ -287,8 +288,9 @@
     }
 
     function getDropdownRows() {
-      if (!onlyIncludeCalculatedValues) return subclasses;
-      return subclasses.filter(hasCalculatedSupportValue);
+      const eligibleRows = subclasses.filter(row => benchmarkEligibleLabels.has(formatOption(row)));
+      if (!onlyIncludeCalculatedValues) return eligibleRows;
+      return eligibleRows.filter(hasCalculatedSupportValue);
     }
 
     function syncRadarVisibility() {
@@ -517,6 +519,10 @@
       assignRank(entries, 'average', 'averageRank');
 
       return new Map(entries.map(entry => [entry.label, entry]));
+    }
+
+    function syncSelectedSubclassEligibility() {
+      selectedSubclassLabels = selectedSubclassLabels.filter(label => benchmarkEligibleLabels.has(label));
     }
 
     function getPartyAverage(labels, dataset = subclasses) {
@@ -777,7 +783,7 @@
           <table class="benchmark-table">
             <thead>
               <tr>
-                <th>Selected subclass</th>
+                <th>Selected subclasses (total of ${rows.length} subclasses)</th>
                 <th>Total</th>
                 <th>Total rank</th>
                 <th>Average</th>
@@ -1107,6 +1113,8 @@
       subclasses = usable;
       normalizedSubclasses = normalizeSuggestionRows(subclasses);
       benchmarks = buildBenchmarkDataset();
+      benchmarkEligibleLabels = new Set(benchmarks.keys());
+      syncSelectedSubclassEligibility();
       assertSuggestionNormalization(subclasses, normalizedSubclasses);
       renderMetricHelpRow();
       populateClassDropdown();
