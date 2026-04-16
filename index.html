@@ -32,8 +32,34 @@
     .suggestion-item { padding: 12px; background: #f9fafb; border-left: 4px solid #2563eb; border-radius: 4px; }
     .suggestion-title { font-weight: 600; margin-bottom: 6px; }
     .suggestion-content { font-size: .92rem; color: #475569; }
+    .section-heading { display: flex; align-items: center; gap: 8px; }
+    .metric-help-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .metric-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: #eff6ff; color: #1e3a8a; font-size: .88rem; }
+    .help-wrap { position: relative; display: inline-flex; align-items: center; }
+    .help-button {
+      width: 22px; height: 22px; border-radius: 999px; border: 1px solid #93c5fd; background: #dbeafe;
+      color: #1d4ed8; font-size: .82rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center;
+      cursor: help; padding: 0;
+    }
+    .help-button:hover, .help-button:focus-visible { background: #bfdbfe; outline: none; }
+    .help-popover {
+      position: absolute; top: calc(100% + 8px); right: 0; width: min(280px, 80vw); padding: 10px 12px; border-radius: 10px;
+      background: #0f172a; color: #f8fafc; font-size: .84rem; line-height: 1.45; box-shadow: 0 10px 28px rgba(15, 23, 42, .28);
+      opacity: 0; visibility: hidden; transform: translateY(-4px); transition: opacity .16s ease, transform .16s ease, visibility .16s ease;
+      z-index: 20;
+    }
+    .help-wrap:hover .help-popover, .help-wrap:focus-within .help-popover { opacity: 1; visibility: visible; transform: translateY(0); }
+    .suggestion-columns { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+    .suggestion-column { padding: 10px 12px; border-radius: 10px; background: #ffffff; border: 1px solid #e2e8f0; }
+    .suggestion-column-title { margin-bottom: 8px; font-size: .82rem; font-weight: 700; color: #334155; letter-spacing: .02em; text-transform: uppercase; }
+    .combo-table-wrap { overflow-x: auto; }
+    .combo-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+    .combo-table th, .combo-table td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; text-align: center; }
+    .combo-table th { background: #f8fafc; color: #334155; font-weight: 700; }
+    .combo-table td:first-child, .combo-table th:first-child { text-align: left; position: sticky; left: 0; background: #fff; }
 
     @media (max-width: 980px) { .chart-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 760px) { .suggestion-columns { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -57,7 +83,14 @@
 
   <div class="chart-grid">
     <div id="radarAvgCard" class="card chart-card">
-      <div class="chart-title">Selected subclass scores</div>
+      <div class="chart-title section-heading">
+        <span>Selected subclass scores</span>
+        <span class="help-wrap">
+          <button type="button" class="help-button" aria-label="Selected subclass scores help">?</button>
+          <span class="help-popover">These radar plots now use raw scores directly from the dataset. The radial axis expands to the highest metric value found anywhere in the loaded data.</span>
+        </span>
+      </div>
+      <div id="metricHelpRow" class="metric-help-row"></div>
       <div id="radarChartAvg" style="width:100%;height:420px;"></div>
       <div id="hoverInfoAvg" class="hover-info">Hover a point to inspect values.</div>
       <div id="clickInfoAvg" class="click-info">Click a point to pin details.</div>
@@ -73,7 +106,13 @@
     </div>
 
     <div id="suggestionsCard" class="card suggestions-panel">
-      <div class="chart-title">Joining Player Suggestions</div>
+      <div class="chart-title section-heading">
+        <span>Joining Player Suggestions</span>
+        <span class="help-wrap">
+          <button type="button" class="help-button" aria-label="Joining player suggestions help">?</button>
+          <span class="help-popover">Each suggestion panel compares raw score calculations on the left with a per-metric normalized view on the right. The normalized view only rescales a metric if its dataset-wide maximum exceeds 5.</span>
+        </span>
+      </div>
       <div id="suggestionsList"></div>
     </div>
 
@@ -103,6 +142,17 @@
     </div>
   </div>
 
+  <div id="combinationCard" class="card">
+    <div class="chart-title section-heading">
+      <span>Combination Counts</span>
+      <span class="help-wrap">
+        <button type="button" class="help-button" aria-label="Combination counts help">?</button>
+        <span class="help-popover">This panel uses combinations, not permutations. Each value shows the number of unordered selections computed with n choose r for n from 2 to 9.</span>
+      </span>
+    </div>
+    <div id="combinationPanelContent"></div>
+  </div>
+
   <footer style="text-align:center; font-size:.8em; margin-top:20px; color:#666;">
     <p>Subclass rankings sourced from D4 D&amp;D Deep Dive and Treantmonk's Temple.</p>
     <p>&copy; Kyle Drover — Design &amp; Development.</p>
@@ -112,6 +162,17 @@
     const METRICS = ['damage', 'survivability', 'support', 'control', 'utility'];
     const METRIC_LABELS = ['Damage', 'Survivability', 'Support', 'Control', 'Utility'];
     const OPTIMISER_MIN = 3.5;
+    const METRIC_HELP_TEXT = {
+      damage: 'Overall offensive output, including burst and sustained damage.',
+      survivability: 'How well the build avoids dropping, mitigates risk, or recovers from pressure.',
+      support: 'How much the build improves allies through buffs, healing, or enabling actions.',
+      control: 'How strongly the build shapes enemy turns, positions, or available actions.',
+      utility: 'Out-of-combat flexibility, problem solving, exploration, and general toolkit breadth.'
+    };
+    const SUGGESTION_HELP_TEXT = {
+      optimiser: 'The Optimiser\'s Dream tests each candidate by averaging it into the current party and keeping only candidates that keep every metric above the active threshold. The best valid candidate is the one with the highest combined average.',
+      vibes: 'The Vibes Check finds the candidate that produces the most even party profile by minimizing variance across the combined party metrics.'
+    };
 
     const CONDITIONS = [
       'blinded','charmed','deafened','exhaustion','frightened','grappled','incapacitated',
@@ -146,8 +207,30 @@
     };
 
     let subclasses = [];
+    let normalizedSubclasses = [];
     let selectedSubclassLabels = [];
     let onlyIncludeCalculatedValues = true;
+
+    function buildHelpButton(text, label = 'Help') {
+      return `
+        <span class="help-wrap">
+          <button type="button" class="help-button" aria-label="${escapeHtml(label)}">?</button>
+          <span class="help-popover">${escapeHtml(text)}</span>
+        </span>
+      `;
+    }
+
+    function renderMetricHelpRow() {
+      const row = document.getElementById('metricHelpRow');
+      if (!row) return;
+
+      row.innerHTML = METRICS.map(metric => `
+        <span class="metric-chip">
+          <span>${escapeHtml(METRIC_LABELS[METRICS.indexOf(metric)])}</span>
+          ${buildHelpButton(METRIC_HELP_TEXT[metric], `${METRIC_LABELS[METRICS.indexOf(metric)]} help`)}
+        </span>
+      `).join('');
+    }
 
     function formatOption(row) {
       const subclass = getSubclassName(row) || 'Unknown Subclass';
@@ -326,22 +409,37 @@
       return out;
     }
 
-    function getMetrics(label) {
-      const row = subclasses.find(r => formatOption(r) === label);
-      if (!row) return null;
-      return METRICS.map(metric => Number(row[metric] || 0));
+    function getRowsForLabel(label, dataset = subclasses) {
+      return dataset.filter(row => formatOption(row) === label);
     }
 
-    function getPartyAverage(labels) {
-      const selectedMetrics = labels.map(getMetrics).filter(Boolean);
+    function getAverageMetricsForRows(rows) {
+      if (!rows.length) return null;
+      return METRICS.map(metric => {
+        const values = rows.map(row => Number(row[metric])).filter(Number.isFinite);
+        if (!values.length) return 0;
+        return roundScore(values.reduce((sum, value) => sum + value, 0) / values.length);
+      });
+    }
+
+    function getMetrics(label, dataset = subclasses) {
+      return getAverageMetricsForRows(getRowsForLabel(label, dataset));
+    }
+
+    function getCandidateLabels(dataset = subclasses) {
+      return [...new Set(dataset.map(formatOption))];
+    }
+
+    function getPartyAverage(labels, dataset = subclasses) {
+      const selectedMetrics = labels.map(label => getMetrics(label, dataset)).filter(Boolean);
       if (!selectedMetrics.length) return null;
       return selectedMetrics
         .reduce((totals, values) => totals ? totals.map((v, i) => v + values[i]) : [...values], null)
         .map(v => v / selectedMetrics.length);
     }
 
-    function getOptimiserSuggestion(labels) {
-      const currentAvg = getPartyAverage(labels);
+    function getOptimiserSuggestion(labels, dataset = subclasses) {
+      const currentAvg = getPartyAverage(labels, dataset);
       if (!currentAvg) return null;
 
       let threshold = OPTIMISER_MIN;
@@ -349,11 +447,11 @@
       while (threshold >= 0) {
         let best = null;
 
-        subclasses.forEach(candidateRow => {
-          const candidateLabel = formatOption(candidateRow);
+        getCandidateLabels(dataset).forEach(candidateLabel => {
           if (labels.includes(candidateLabel)) return;
 
-          const candidateValues = METRICS.map(m => Number(candidateRow[m] || 0));
+          const candidateValues = getMetrics(candidateLabel, dataset);
+          if (!candidateValues) return;
           const n = labels.length;
           const combined = currentAvg.map((v, i) => ((v * n) + candidateValues[i]) / (n + 1));
 
@@ -376,6 +474,33 @@
       return null;
     }
 
+    function getVibesSuggestion(labels, dataset = subclasses) {
+      const partyAvg = getPartyAverage(labels, dataset);
+      if (!partyAvg) return null;
+
+      let best = null;
+      let minCombinedVariance = Infinity;
+
+      getCandidateLabels(dataset).forEach(candidateLabel => {
+        if (labels.includes(candidateLabel)) return;
+
+        const candidateValues = getMetrics(candidateLabel, dataset);
+        if (!candidateValues) return;
+
+        const combinedCount = labels.length + 1;
+        const combinedValues = partyAvg.map((v, i) => (v * labels.length + candidateValues[i]) / combinedCount);
+        const mean = combinedValues.reduce((sum, value) => sum + value, 0) / METRICS.length;
+        const variance = combinedValues.reduce((sum, value) => sum + Math.pow(value - mean, 2), 0) / METRICS.length;
+
+        if (variance < minCombinedVariance) {
+          minCombinedVariance = variance;
+          best = { label: candidateLabel, variance, combinedValues };
+        }
+      });
+
+      return best ? { ...best, variance: roundScore(best.variance) } : null;
+    }
+
     function toPolarTrace(name, values, color) {
       return {
         type: 'scatterpolar',
@@ -391,10 +516,23 @@
       };
     }
 
-    function plotLayout() {
+    function getGlobalMetricMax(dataset = subclasses) {
+      let maxValue = 0;
+
+      dataset.forEach(row => {
+        METRICS.forEach(metric => {
+          const value = Number(row[metric]);
+          if (Number.isFinite(value)) maxValue = Math.max(maxValue, value);
+        });
+      });
+
+      return maxValue || 5;
+    }
+
+    function plotLayout(axisMax) {
       return {
         polar: {
-          radialaxis: { visible: true, range: [0, 5], tick0: 0, dtick: 1 }
+          radialaxis: { visible: true, range: [0, Math.max(5, axisMax)], tick0: 0, dtick: 1 }
         },
         margin: { t: 16, r: 24, b: 24, l: 24 },
         showlegend: true,
@@ -456,51 +594,56 @@
       if (!selectedSubclassLabels.length) {
         list.innerHTML = `
           <div class="suggestion-item">
-            <div class="suggestion-title">The Optimiser\'s Dream</div>
+            <div class="suggestion-title">The Optimiser\'s Dream ${buildHelpButton(SUGGESTION_HELP_TEXT.optimiser, 'Optimiser\'s Dream help')}</div>
             <div class="suggestion-content">Add subclasses to get recommendations</div>
           </div>
           <div class="suggestion-item">
-            <div class="suggestion-title">The Vibes Check</div>
+            <div class="suggestion-title">The Vibes Check ${buildHelpButton(SUGGESTION_HELP_TEXT.vibes, 'The Vibes Check help')}</div>
             <div class="suggestion-content">Add subclasses to get recommendations</div>
           </div>
         `;
         return;
       }
 
-      let vibesCheck = null;
-      let minCombinedVariance = Infinity;
-      const partyAvg = getPartyAverage(selectedSubclassLabels);
-
-      subclasses.forEach(candidateRow => {
-        const candidateLabel = formatOption(candidateRow);
-        if (selectedSubclassLabels.includes(candidateLabel)) return;
-
-        const candidateValues = METRICS.map(m => Number(candidateRow[m] || 0));
-        const combinedCount = selectedSubclassLabels.length + 1;
-        const combinedValues = partyAvg.map((v, i) => (v * selectedSubclassLabels.length + candidateValues[i]) / combinedCount);
-        const mean = combinedValues.reduce((a, b) => a + b, 0) / METRICS.length;
-        const variance = combinedValues.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / METRICS.length;
-
-        if (variance < minCombinedVariance) {
-          minCombinedVariance = variance;
-          vibesCheck = { label: candidateLabel, variance: variance.toFixed(2) };
-        }
-      });
-
-      const optimiser = getOptimiserSuggestion(selectedSubclassLabels);
+      const optimiserRaw = getOptimiserSuggestion(selectedSubclassLabels, subclasses);
+      const optimiserNormalized = getOptimiserSuggestion(selectedSubclassLabels, normalizedSubclasses);
+      const vibesRaw = getVibesSuggestion(selectedSubclassLabels, subclasses);
+      const vibesNormalized = getVibesSuggestion(selectedSubclassLabels, normalizedSubclasses);
 
       list.innerHTML = `
         <div class="suggestion-item">
-          <div class="suggestion-title">The Optimiser's Dream</div>
-          <div class="suggestion-content">
-            ${optimiser
-              ? `${escapeHtml(optimiser.label)}<br/>Combined Avg: ${optimiser.combinedAvg.toFixed(2)}<br/>All metrics > ${optimiser.thresholdUsed.toFixed(2)}`
-              : 'No valid subclass found, even after lowering threshold by 0.25 steps.'}
+          <div class="suggestion-title">The Optimiser's Dream ${buildHelpButton(SUGGESTION_HELP_TEXT.optimiser, 'Optimiser\'s Dream help')}</div>
+          <div class="suggestion-columns">
+            <div class="suggestion-column">
+              <div class="suggestion-column-title">Raw values</div>
+              <div class="suggestion-content">
+                ${optimiserRaw
+                  ? `${escapeHtml(optimiserRaw.label)}<br/>Combined Avg: ${optimiserRaw.combinedAvg.toFixed(2)}<br/>All metrics &gt; ${optimiserRaw.thresholdUsed.toFixed(2)}`
+                  : 'No valid subclass found, even after lowering threshold by 0.25 steps.'}
+              </div>
+            </div>
+            <div class="suggestion-column">
+              <div class="suggestion-column-title">Normalized 0-5</div>
+              <div class="suggestion-content">
+                ${optimiserNormalized
+                  ? `${escapeHtml(optimiserNormalized.label)}<br/>Combined Avg: ${optimiserNormalized.combinedAvg.toFixed(2)}<br/>All metrics &gt; ${optimiserNormalized.thresholdUsed.toFixed(2)}`
+                  : 'No valid subclass found, even after lowering threshold by 0.25 steps.'}
+              </div>
+            </div>
           </div>
         </div>
         <div class="suggestion-item">
-          <div class="suggestion-title">The Vibes Check</div>
-          <div class="suggestion-content">${vibesCheck ? `${escapeHtml(vibesCheck.label)}<br/>Variance: ${vibesCheck.variance}` : 'N/A'}</div>
+          <div class="suggestion-title">The Vibes Check ${buildHelpButton(SUGGESTION_HELP_TEXT.vibes, 'The Vibes Check help')}</div>
+          <div class="suggestion-columns">
+            <div class="suggestion-column">
+              <div class="suggestion-column-title">Raw values</div>
+              <div class="suggestion-content">${vibesRaw ? `${escapeHtml(vibesRaw.label)}<br/>Variance: ${vibesRaw.variance.toFixed(2)}` : 'N/A'}</div>
+            </div>
+            <div class="suggestion-column">
+              <div class="suggestion-column-title">Normalized 0-5</div>
+              <div class="suggestion-content">${vibesNormalized ? `${escapeHtml(vibesNormalized.label)}<br/>Variance: ${vibesNormalized.variance.toFixed(2)}` : 'N/A'}</div>
+            </div>
+          </div>
         </div>
       `;
     }
@@ -512,6 +655,53 @@
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+    }
+
+    function combination(n, r) {
+      if (r < 0 || r > n) return 0;
+      if (r === 0 || r === n) return 1;
+
+      const k = Math.min(r, n - r);
+      let result = 1;
+      for (let i = 1; i <= k; i += 1) {
+        result = (result * (n - (k - i))) / i;
+      }
+      return Math.round(result);
+    }
+
+    function renderCombinationPanel() {
+      const container = document.getElementById('combinationPanelContent');
+      if (!container) return;
+
+      const rValues = Array.from({ length: 9 }, (_, index) => index + 1);
+      const rows = Array.from({ length: 8 }, (_, index) => index + 2);
+
+      container.innerHTML = `
+        <div class="combo-table-wrap">
+          <table class="combo-table">
+            <thead>
+              <tr>
+                <th>n</th>
+                ${rValues.map(r => `<th>C(n, ${r})</th>`).join('')}
+                <th>Total non-trivial</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(n => {
+                const total = rValues.reduce((sum, r) => sum + ((r < n) ? combination(n, r) : 0), 0);
+                return `
+                  <tr>
+                    <td>${n}</td>
+                    ${rValues.map(r => `<td>${r < n ? combination(n, r) : '—'}</td>`).join('')}
+                    <td>${total}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+        <p class="caption">Totals shown here sum the non-trivial unordered selections for each n, excluding the empty set and the full set.</p>
+      `;
     }
 
     function renderConditionMatrix() {
@@ -614,12 +804,13 @@
       }
 
       if (onlyIncludeCalculatedValues) {
+        const axisMax = getGlobalMetricMax(subclasses);
         const avgTraces = selectedData.map((d, i) => toPolarTrace(d.label, d.values, palette[i % palette.length]));
         const partyAvg = getPartyAverage(selectedSubclassLabels);
         const sumTrace = toPolarTrace('Average of selected subclasses', partyAvg, '#10b981');
 
-        Plotly.react('radarChartAvg', avgTraces, plotLayout(), { responsive: true, displayModeBar: true });
-        Plotly.react('radarChartSum', [sumTrace], plotLayout(), { responsive: true, displayModeBar: true });
+        Plotly.react('radarChartAvg', avgTraces, plotLayout(axisMax), { responsive: true, displayModeBar: true });
+        Plotly.react('radarChartSum', [sumTrace], plotLayout(axisMax), { responsive: true, displayModeBar: true });
 
         bindPlotEvents('radarChartAvg', 'hoverInfoAvg', 'clickInfoAvg');
         bindPlotEvents('radarChartSum', 'hoverInfoSum', 'clickInfoSum');
@@ -744,82 +935,44 @@
       return Math.round(value * 1000) / 1000;
     }
 
-    function getNormalizationGroupKey(row) {
-      return String(row.youtuber || '').trim().toLowerCase();
-    }
+    function normalizeSuggestionRows(rows) {
+      const clonedRows = rows.map(row => ({ ...row }));
 
-    function normalizeLoadedScores(rows) {
-      const groups = new Map();
+      for (const field of SCORE_FIELDS) {
+        const numericRows = clonedRows.filter(row => Number.isFinite(Number(row[field])));
+        if (!numericRows.length) continue;
 
-      for (const row of rows) {
-        const groupKey = getNormalizationGroupKey(row);
+        const fieldMax = Math.max(...numericRows.map(row => Number(row[field])));
+        if (fieldMax <= 5) continue;
 
-        if (!groups.has(groupKey)) groups.set(groupKey, []);
-        groups.get(groupKey).push(row);
+        const scaleFactor = 5 / fieldMax;
+        numericRows.forEach(row => {
+          const value = Number(row[field]);
+          const scaled = roundScore(value * scaleFactor);
+          row[field] = value === fieldMax ? 5 : scaled;
+        });
       }
 
-      for (const groupRows of groups.values()) {
-        for (const field of SCORE_FIELDS) {
-          const numericRows = groupRows.filter(row => Number.isFinite(Number(row[field])));
-          if (!numericRows.length) continue;
+      return clonedRows;
+    }
 
-          const fieldMax = Math.max(...numericRows.map(row => Number(row[field])));
-          if (fieldMax <= 5) continue;
+    function assertSuggestionNormalization(rawRows, normalizedRows) {
+      SCORE_FIELDS.forEach(field => {
+        const rawValues = rawRows.map(row => Number(row[field])).filter(Number.isFinite);
+        const normalizedValues = normalizedRows.map(row => Number(row[field])).filter(Number.isFinite);
+        if (!rawValues.length || !normalizedValues.length) return;
 
-          const scaleFactor = 5 / fieldMax;
-          for (const row of numericRows) {
-            const value = Number(row[field]);
-            const scaled = roundScore(value * scaleFactor);
-            row[field] = value === fieldMax ? 5 : scaled;
-          }
+        const rawMax = Math.max(...rawValues);
+        const normalizedMax = Math.max(...normalizedValues);
+
+        if (rawMax > 5 && normalizedMax !== 5) {
+          throw new Error(`Suggestion normalization failed for ${field}: max is ${normalizedMax}, expected 5.`);
         }
-      }
 
-      return rows;
-    }
-
-    function groupRowsByYoutuber(rows) {
-      const groups = new Map();
-
-      for (const row of rows) {
-        const groupKey = getNormalizationGroupKey(row);
-
-        if (!groups.has(groupKey)) groups.set(groupKey, []);
-        groups.get(groupKey).push(row);
-      }
-
-      return groups;
-    }
-
-    function assertNormalizedMetricMaxes(originalRows, normalizedRows) {
-      const originalGroups = groupRowsByYoutuber(originalRows);
-      const normalizedGroups = groupRowsByYoutuber(normalizedRows);
-
-      for (const [groupKey, groupRows] of originalGroups.entries()) {
-        const normalizedGroupRows = normalizedGroups.get(groupKey) || [];
-
-        for (const field of SCORE_FIELDS) {
-          const originalValues = groupRows
-            .map(row => Number(row[field]))
-            .filter(Number.isFinite);
-          const normalizedValues = normalizedGroupRows
-            .map(row => Number(row[field]))
-            .filter(Number.isFinite);
-
-          if (!originalValues.length || !normalizedValues.length) continue;
-
-          const originalMax = Math.max(...originalValues);
-          const normalizedMax = Math.max(...normalizedValues);
-
-          if (originalMax > 5 && normalizedMax !== 5) {
-            throw new Error(`Normalization assertion failed for ${groupKey || 'unknown youtuber'} / ${field}: max is ${normalizedMax}, expected 5.`);
-          }
-
-          if (originalMax <= 5 && normalizedMax !== originalMax) {
-            throw new Error(`No-op assertion failed for ${groupKey || 'unknown youtuber'} / ${field}: max is ${normalizedMax}, expected ${originalMax}.`);
-          }
+        if (rawMax <= 5 && normalizedMax !== rawMax) {
+          throw new Error(`Suggestion normalization no-op failed for ${field}: max is ${normalizedMax}, expected ${rawMax}.`);
         }
-      }
+      });
     }
 
     async function fetchSubclasses() {
@@ -834,9 +987,7 @@
 
       if (!rows.length) throw new Error('subclasses.json loaded but contains zero rows.');
 
-      const originalRows = rows.map(r => ({ ...r }));
-
-      subclasses = normalizeLoadedScores(rows).map(r => ({
+      subclasses = rows.map(r => ({
         ...r,
         class: getClassName(r),
         subclass: getSubclassName(r)
@@ -848,7 +999,10 @@
       if (!usable.length) throw new Error('No usable class/subclass fields found. Check JSON key names.');
 
       subclasses = usable;
-      assertNormalizedMetricMaxes(originalRows, subclasses);
+      normalizedSubclasses = normalizeSuggestionRows(subclasses);
+      assertSuggestionNormalization(subclasses, normalizedSubclasses);
+      renderMetricHelpRow();
+      renderCombinationPanel();
       populateClassDropdown();
       syncRadarVisibility();
       runDataSanityChecks(subclasses);
