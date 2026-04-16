@@ -496,10 +496,21 @@
     }
 
     function assignRank(entries, key, rankKey) {
+      let previousValue = null;
+      let previousRank = 0;
+
       [...entries]
         .sort((a, b) => (b[key] - a[key]) || a.label.localeCompare(b.label))
         .forEach((entry, index) => {
-          entry[rankKey] = index + 1;
+          if (previousValue !== null && entry[key] === previousValue) {
+            entry[rankKey] = previousRank;
+            return;
+          }
+
+          const rank = index + 1;
+          entry[rankKey] = rank;
+          previousValue = entry[key];
+          previousRank = rank;
         });
     }
 
