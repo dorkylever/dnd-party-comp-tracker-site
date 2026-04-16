@@ -520,13 +520,13 @@
           const metrics = getMetrics(label, subclasses, { requireAll: true });
           if (!metrics) return null;
 
-          const total = roundScore(metrics.reduce((sum, value) => sum + value, 0));
-          const average = roundScore(total / METRICS.length);
-          return { label, total, average };
+          const maxScore = roundScore(Math.max(...metrics));
+          const average = roundScore(metrics.reduce((sum, value) => sum + value, 0) / METRICS.length);
+          return { label, maxScore, average };
         })
         .filter(Boolean);
 
-      assignRank(entries, 'total', 'totalRank');
+      assignRank(entries, 'maxScore', 'maxScoreRank');
       assignRank(entries, 'average', 'averageRank');
 
       return new Map(entries.map(entry => [entry.label, entry]));
@@ -773,7 +773,7 @@
       if (!container) return;
 
       if (!selectedSubclassLabels.length) {
-        container.innerHTML = '<p class="caption">Add subclasses to compare their benchmark totals, averages, and ranks.</p>';
+        container.innerHTML = '<p class="caption">Add subclasses to compare their benchmark max scores, averages, and ranks.</p>';
         updateHelpPopoverPositions();
         return;
       }
@@ -782,9 +782,9 @@
         const entry = benchmarks.get(label);
         return {
           rowLabel: `${index + 1}. ${label}`,
-          total: entry ? entry.total.toFixed(2) : 'N/A',
+          maxScore: entry ? entry.maxScore.toFixed(2) : 'N/A',
           average: entry ? entry.average.toFixed(2) : 'N/A',
-          totalRank: entry ? formatOrdinal(entry.totalRank) : 'N/A',
+          maxScoreRank: entry ? formatOrdinal(entry.maxScoreRank) : 'N/A',
           averageRank: entry ? formatOrdinal(entry.averageRank) : 'N/A'
         };
       });
@@ -795,8 +795,8 @@
             <thead>
               <tr>
                 <th>Selected subclasses (total of ${benchmarks.size} subclasses)</th>
-                <th>Total</th>
-                <th>Total rank</th>
+                <th>Max score</th>
+                <th>Max score rank</th>
                 <th>Average</th>
                 <th>Average rank</th>
               </tr>
@@ -805,8 +805,8 @@
               ${rows.map(row => `
                 <tr>
                   <td>${escapeHtml(row.rowLabel)}</td>
-                  <td>${row.total}</td>
-                  <td>${row.totalRank}</td>
+                  <td>${row.maxScore}</td>
+                  <td>${row.maxScoreRank}</td>
                   <td>${row.average}</td>
                   <td>${row.averageRank}</td>
                 </tr>
