@@ -764,7 +764,7 @@
           if (!numericRows.length) continue;
 
           const fieldMax = Math.max(...numericRows.map(row => Number(row[field])));
-          if (fieldMax <= 0) continue;
+          if (fieldMax <= 5) continue;
 
           const scaleFactor = 5 / fieldMax;
           for (const row of numericRows) {
@@ -778,7 +778,7 @@
       return rows;
     }
 
-    function assertNormalizedMetricMaxes(rows) {
+    function groupRowsByYoutuber(rows) {
       const groups = new Map();
 
       for (const row of rows) {
@@ -788,17 +788,35 @@
         groups.get(groupKey).push(row);
       }
 
-      for (const [groupKey, groupRows] of groups.entries()) {
+      return groups;
+    }
+
+    function assertNormalizedMetricMaxes(originalRows, normalizedRows) {
+      const originalGroups = groupRowsByYoutuber(originalRows);
+      const normalizedGroups = groupRowsByYoutuber(normalizedRows);
+
+      for (const [groupKey, groupRows] of originalGroups.entries()) {
+        const normalizedGroupRows = normalizedGroups.get(groupKey) || [];
+
         for (const field of SCORE_FIELDS) {
-          const numericValues = groupRows
+          const originalValues = groupRows
+            .map(row => Number(row[field]))
+            .filter(Number.isFinite);
+          const normalizedValues = normalizedGroupRows
             .map(row => Number(row[field]))
             .filter(Number.isFinite);
 
-          if (!numericValues.length) continue;
+          if (!originalValues.length || !normalizedValues.length) continue;
 
-          const maxValue = Math.max(...numericValues);
-          if (maxValue !== 5) {
-            throw new Error(`Normalization assertion failed for ${groupKey || 'unknown youtuber'} / ${field}: max is ${maxValue}, expected 5.`);
+          const originalMax = Math.max(...originalValues);
+          const normalizedMax = Math.max(...normalizedValues);
+
+          if (originalMax > 5 && normalizedMax !== 5) {
+            throw new Error(`Normalization assertion failed for ${groupKey || 'unknown youtuber'} / ${field}: max is ${normalizedMax}, expected 5.`);
+          }
+
+          if (originalMax <= 5 && normalizedMax !== originalMax) {
+            throw new Error(`No-op assertion failed for ${groupKey || 'unknown youtuber'} / ${field}: max is ${normalizedMax}, expected ${originalMax}.`);
           }
         }
       }
@@ -816,6 +834,8 @@
 
       if (!rows.length) throw new Error('subclasses.json loaded but contains zero rows.');
 
+      const originalRows = rows.map(r => ({ ...r }));
+
       subclasses = normalizeLoadedScores(rows).map(r => ({
         ...r,
         class: getClassName(r),
@@ -828,7 +848,7 @@
       if (!usable.length) throw new Error('No usable class/subclass fields found. Check JSON key names.');
 
       subclasses = usable;
-      assertNormalizedMetricMaxes(subclasses);
+      assertNormalizedMetricMaxes(originalRows, subclasses);
       populateClassDropdown();
       syncRadarVisibility();
       runDataSanityChecks(subclasses);
