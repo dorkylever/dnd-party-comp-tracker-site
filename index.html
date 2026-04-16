@@ -758,31 +758,53 @@
       }
 
       for (const groupRows of groups.values()) {
-        let maxScore = null;
+        for (const field of SCORE_FIELDS) {
+          const numericRows = groupRows.filter(row => Number.isFinite(Number(row[field])));
+          if (!numericRows.length) continue;
 
-        for (const row of groupRows) {
-          for (const field of SCORE_FIELDS) {
+          const fieldMax = Math.max(...numericRows.map(row => Number(row[field])));
+          if (fieldMax <= 0) continue;
+
+          const scaleFactor = 5 / fieldMax;
+          for (const row of numericRows) {
             const value = Number(row[field]);
-            if (Number.isFinite(value)) {
-              maxScore = maxScore === null ? value : Math.max(maxScore, value);
-            }
-          }
-        }
-
-        if (maxScore === null || maxScore <= 5) continue;
-
-        const scaleFactor = 5 / maxScore;
-        for (const row of groupRows) {
-          for (const field of SCORE_FIELDS) {
-            const value = Number(row[field]);
-            if (Number.isFinite(value)) {
-              row[field] = roundScore(value * scaleFactor);
-            }
+            const scaled = roundScore(value * scaleFactor);
+            row[field] = value === fieldMax ? 5 : scaled;
           }
         }
       }
 
       return rows;
+    }
+
+    function assertNormalizedMetricMaxes(rows) {
+      const groups = new Map();
+
+      for (const row of rows) {
+        const groupKey = JSON.stringify([
+          getClassName(row).trim().toLowerCase(),
+          String(row.youtuber || '').trim().toLowerCase()
+        ]);
+
+        if (!groups.has(groupKey)) groups.set(groupKey, []);
+        groups.get(groupKey).push(row);
+      }
+
+      for (const [groupKey, groupRows] of groups.entries()) {
+        for (const field of SCORE_FIELDS) {
+          const numericValues = groupRows
+            .map(row => Number(row[field]))
+            .filter(Number.isFinite);
+
+          if (!numericValues.length) continue;
+
+          const maxValue = Math.max(...numericValues);
+          if (maxValue !== 5) {
+            const [groupClass, groupYoutuber] = JSON.parse(groupKey);
+            throw new Error(`Normalization assertion failed for ${groupClass} / ${groupYoutuber} / ${field}: max is ${maxValue}, expected 5.`);
+          }
+        }
+      }
     }
 
     async function fetchSubclasses() {
@@ -809,6 +831,7 @@
       if (!usable.length) throw new Error('No usable class/subclass fields found. Check JSON key names.');
 
       subclasses = usable;
+      assertNormalizedMetricMaxes(subclasses);
       populateClassDropdown();
       syncRadarVisibility();
       runDataSanityChecks(subclasses);
