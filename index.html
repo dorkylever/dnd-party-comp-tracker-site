@@ -48,6 +48,8 @@
       opacity: 0; visibility: hidden; transform: translateY(-4px); transition: opacity .16s ease, transform .16s ease, visibility .16s ease;
       z-index: 20;
     }
+    .help-popover.align-left { left: 0; right: auto; }
+    .help-popover.align-up { top: auto; bottom: calc(100% + 8px); transform: translateY(4px); }
     .help-wrap:hover .help-popover, .help-wrap:focus-within .help-popover { opacity: 1; visibility: visible; transform: translateY(0); }
     .suggestion-columns { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
     .suggestion-column { padding: 10px 12px; border-radius: 10px; background: #ffffff; border: 1px solid #e2e8f0; }
@@ -230,6 +232,29 @@
           ${buildHelpButton(METRIC_HELP_TEXT[metric], `${METRIC_LABELS[METRICS.indexOf(metric)]} help`)}
         </span>
       `).join('');
+
+      updateHelpPopoverPositions();
+    }
+
+    function getNumericMetricValue(row, metric) {
+      const rawValue = row?.[metric];
+      if (rawValue === null || rawValue === undefined || rawValue === '') return null;
+
+      const numericValue = Number(rawValue);
+      return Number.isFinite(numericValue) ? numericValue : null;
+    }
+
+    function updateHelpPopoverPositions() {
+      document.querySelectorAll('.help-wrap').forEach((wrap) => {
+        const popover = wrap.querySelector('.help-popover');
+        if (!popover) return;
+
+        popover.classList.remove('align-left', 'align-up');
+
+        const rect = popover.getBoundingClientRect();
+        if (rect.right > window.innerWidth - 12) popover.classList.add('align-left');
+        if (rect.bottom > window.innerHeight - 12) popover.classList.add('align-up');
+      });
     }
 
     function formatOption(row) {
@@ -416,7 +441,7 @@
     function getAverageMetricsForRows(rows) {
       if (!rows.length) return null;
       return METRICS.map(metric => {
-        const values = rows.map(row => Number(row[metric])).filter(Number.isFinite);
+        const values = rows.map(row => getNumericMetricValue(row, metric)).filter(Number.isFinite);
         if (!values.length) return 0;
         return roundScore(values.reduce((sum, value) => sum + value, 0) / values.length);
       });
@@ -521,7 +546,7 @@
 
       dataset.forEach(row => {
         METRICS.forEach(metric => {
-          const value = Number(row[metric]);
+          const value = getNumericMetricValue(row, metric);
           if (Number.isFinite(value)) maxValue = Math.max(maxValue, value);
         });
       });
@@ -602,6 +627,7 @@
             <div class="suggestion-content">Add subclasses to get recommendations</div>
           </div>
         `;
+        updateHelpPopoverPositions();
         return;
       }
 
@@ -646,6 +672,8 @@
           </div>
         </div>
       `;
+
+      updateHelpPopoverPositions();
     }
 
     function escapeHtml(value) {
@@ -657,51 +685,57 @@
         .replace(/'/g, '&#39;');
     }
 
-    function combination(n, r) {
-      if (r < 0 || r > n) return 0;
-      if (r === 0 || r === n) return 1;
+    function combinationBigInt(n, r) {
+      if (r < 0 || r > n) return 0n;
+      if (r === 0 || r === n) return 1n;
 
       const k = Math.min(r, n - r);
-      let result = 1;
+      let result = 1n;
       for (let i = 1; i <= k; i += 1) {
-        result = (result * (n - (k - i))) / i;
+        result = (result * BigInt(n - (k - i))) / BigInt(i);
       }
-      return Math.round(result);
+      return result;
+    }
+
+    function formatBigInt(value) {
+      return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     }
 
     function renderCombinationPanel() {
       const container = document.getElementById('combinationPanelContent');
       if (!container) return;
 
-      const rValues = Array.from({ length: 9 }, (_, index) => index + 1);
-      const rows = Array.from({ length: 8 }, (_, index) => index + 2);
+      const totalSubclasses = getCandidateLabels(subclasses).length;
+      const partySizes = Array.from({ length: 8 }, (_, index) => index + 2);
 
       container.innerHTML = `
         <div class="combo-table-wrap">
           <table class="combo-table">
             <thead>
               <tr>
-                <th>n</th>
-                ${rValues.map(r => `<th>C(n, ${r})</th>`).join('')}
-                <th>Total non-trivial</th>
+                <th>Party size r</th>
+                <th>Total subclasses n</th>
+                <th>Combinations C(n, r)</th>
               </tr>
             </thead>
             <tbody>
-              ${rows.map(n => {
-                const total = rValues.reduce((sum, r) => sum + ((r < n) ? combination(n, r) : 0), 0);
+              ${partySizes.map(r => {
+                const count = r <= totalSubclasses ? combinationBigInt(totalSubclasses, r) : 0n;
                 return `
                   <tr>
-                    <td>${n}</td>
-                    ${rValues.map(r => `<td>${r < n ? combination(n, r) : '—'}</td>`).join('')}
-                    <td>${total}</td>
+                    <td>${r}</td>
+                    <td>${totalSubclasses}</td>
+                    <td>${formatBigInt(count)}</td>
                   </tr>
                 `;
               }).join('')}
             </tbody>
           </table>
         </div>
-        <p class="caption">Totals shown here sum the non-trivial unordered selections for each n, excluding the empty set and the full set.</p>
+        <p class="caption">Counts use the total unique subclass count as n and the party size as r.</p>
       `;
+
+      updateHelpPopoverPositions();
     }
 
     function renderConditionMatrix() {
@@ -795,6 +829,7 @@
         Plotly.purge('radarChartAvg');
         Plotly.purge('radarChartSum');
         renderConditionMatrix();
+        updateHelpPopoverPositions();
         return;
       }
 
@@ -817,6 +852,7 @@
       }
 
       renderConditionMatrix();
+      updateHelpPopoverPositions();
     }
 
     document.getElementById('classSelect').addEventListener('change', (e) => {
@@ -868,6 +904,10 @@
     window.addEventListener('unhandledrejection', (event) => {
       const reason = event?.reason?.message || String(event?.reason || 'Unknown promise rejection');
       console.error('[UnhandledRejection]', reason);
+    });
+
+    window.addEventListener('resize', () => {
+      updateHelpPopoverPositions();
     });
 
     function normalizeKey(k) {
@@ -939,15 +979,15 @@
       const clonedRows = rows.map(row => ({ ...row }));
 
       for (const field of SCORE_FIELDS) {
-        const numericRows = clonedRows.filter(row => Number.isFinite(Number(row[field])));
+        const numericRows = clonedRows.filter(row => Number.isFinite(getNumericMetricValue(row, field)));
         if (!numericRows.length) continue;
 
-        const fieldMax = Math.max(...numericRows.map(row => Number(row[field])));
+        const fieldMax = Math.max(...numericRows.map(row => getNumericMetricValue(row, field)));
         if (fieldMax <= 5) continue;
 
         const scaleFactor = 5 / fieldMax;
         numericRows.forEach(row => {
-          const value = Number(row[field]);
+          const value = getNumericMetricValue(row, field);
           const scaled = roundScore(value * scaleFactor);
           row[field] = value === fieldMax ? 5 : scaled;
         });
@@ -958,8 +998,8 @@
 
     function assertSuggestionNormalization(rawRows, normalizedRows) {
       SCORE_FIELDS.forEach(field => {
-        const rawValues = rawRows.map(row => Number(row[field])).filter(Number.isFinite);
-        const normalizedValues = normalizedRows.map(row => Number(row[field])).filter(Number.isFinite);
+        const rawValues = rawRows.map(row => getNumericMetricValue(row, field)).filter(Number.isFinite);
+        const normalizedValues = normalizedRows.map(row => getNumericMetricValue(row, field)).filter(Number.isFinite);
         if (!rawValues.length || !normalizedValues.length) return;
 
         const rawMax = Math.max(...rawValues);
@@ -1006,6 +1046,7 @@
       populateClassDropdown();
       syncRadarVisibility();
       runDataSanityChecks(subclasses);
+      updateHelpPopoverPositions();
     }
 
     // safer boot: don't destroy page if chart render fails
