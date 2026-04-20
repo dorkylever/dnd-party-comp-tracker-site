@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DND Party Composition Tracker</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background: #f4f4f4; color: #1f2937; }
+    h1 { margin-bottom: 16px; }
+    .card { background: #fff; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.08); padding: 20px; max-width: 1200px; margin-bottom: 24px; }
+    .search-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .filter-toggle { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: .92rem; color: #334155; }
+    .filter-toggle label { display: inline-flex; align-items: center; gap: 4px; }
+    select, button { padding: 10px 12px; border-radius: 8px; }
+    select { border: 1px solid #cbd5e1; min-width: 220px; background: #fff; }
+    button { border: none; background: #2563eb; color: #fff; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+
+    #selectedList { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 10px; }
+    .tag { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; background: #e2e8f0; border-radius: 999px; }
+    .tag button { background: transparent; color: #1f2937; padding: 0 4px; font-size: 16px; }
+
+    .chart-grid { display: grid; gap: 24px; grid-template-columns: 1fr 1fr; }
+    .chart-card { min-height: 520px; }
+    .chart-title { margin-bottom: 10px; font-size: 1.05rem; font-weight: 600; }
+    .hover-info, .click-info { margin-top: 8px; padding: 10px 12px; border-radius: 8px; font-size: .95rem; }
+    .hover-info { background: #eef2ff; color: #1e3a8a; }
+    .click-info { background: #ecfeff; color: #155e75; }
+    .caption { margin-top: 12px; color: #475569; }
+    .suggestions-panel { display: flex; flex-direction: column; gap: 12px; }
+    .suggestion-item { padding: 12px; background: #f9fafb; border-left: 4px solid #2563eb; border-radius: 4px; }
+    .suggestion-title { font-weight: 600; margin-bottom: 6px; }
+    .suggestion-content { font-size: .92rem; color: #475569; }
+    .section-heading { display: flex; align-items: center; gap: 8px; }
+    .metric-help-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .metric-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: #eff6ff; color: #1e3a8a; font-size: .88rem; }
+    .help-wrap { position: relative; display: inline-flex; align-items: center; }
+    .help-button {
+      width: 22px; height: 22px; border-radius: 999px; border: 1px solid #93c5fd; background: #dbeafe;
+      color: #1d4ed8; font-size: .82rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center;
+      cursor: help; padding: 0;
+    }
+    .help-button:hover, .help-button:focus-visible { background: #bfdbfe; outline: none; }
+    .help-popover {
+      position: absolute; top: auto; bottom: calc(100% + 8px); right: 0; width: min(280px, 80vw); padding: 10px 12px; border-radius: 10px;
+      background: #0f172a; color: #f8fafc; font-size: .84rem; line-height: 1.45; box-shadow: 0 10px 28px rgba(15, 23, 42, .28);
+      opacity: 0; visibility: hidden; transform: translateY(4px); transition: opacity .16s ease, transform .16s ease, visibility .16s ease;
+      z-index: 20;
+    }
+    .help-popover.align-left { left: 0; right: auto; }
+    .help-wrap:hover .help-popover, .help-wrap:focus-within .help-popover { opacity: 1; visibility: visible; transform: translateY(0); }
+    .suggestion-columns { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+    .suggestion-column { padding: 10px 12px; border-radius: 10px; background: #ffffff; border: 1px solid #e2e8f0; }
+    .suggestion-column-title { margin-bottom: 8px; font-size: .82rem; font-weight: 700; color: #334155; letter-spacing: .02em; text-transform: uppercase; }
+    .combo-table-wrap { overflow-x: auto; }
+    .combo-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+    .combo-table th, .combo-table td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; text-align: center; }
+    .combo-table th { background: #f8fafc; color: #334155; font-weight: 700; }
+    .combo-table td:first-child, .combo-table th:first-child { text-align: left; position: sticky; left: 0; background: #fff; }
+    .benchmark-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+    .benchmark-table th, .benchmark-table td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; text-align: center; }
+    .benchmark-table th { background: #f8fafc; color: #334155; font-weight: 700; }
+    .benchmark-table td:first-child, .benchmark-table th:first-child { text-align: left; }
+
+    @media (max-width: 980px) { .chart-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 760px) { .suggestion-columns { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>DND Party Composition Tracker</h1>
+
+  <div class="card">
+    <p>Select class, then subclass, then add to party.</p>
+    <div class="search-row">
+      <select id="classSelect"><option value="">Select class...</option></select>
+      <select id="subclassSelect"><option value="">Select subclass...</option></select>
+      <button id="addSubclassButton" type="button">Add subclass</button>
+    </div>
+    <div class="filter-toggle">
+      <span>Only include subclasses with calculated values:</span>
+      <label><input type="radio" name="calculatedFilterMode" id="calculatedFilterOn" value="on" checked /> On</label>
+      <label><input type="radio" name="calculatedFilterMode" id="calculatedFilterOff" value="off" /> Off</label>
+    </div>
+    <div id="selectedList"></div>
+    <p class="caption">Duplicates are allowed (multiple players can use the same subclass).</p>
+  </div>
+
+  <div class="chart-grid">
+    <div id="radarAvgCard" class="card chart-card">
+      <div class="chart-title section-heading">
+        <span>Selected subclass scores</span>
+        <span class="help-wrap">
+          <button type="button" class="help-button" aria-label="Selected subclass scores help">?</button>
+          <span class="help-popover">These radar plots now use raw scores directly from the dataset. The radial axis expands to the highest metric value found anywhere in the loaded data.</span>
+        </span>
+      </div>
+      <div id="metricHelpRow" class="metric-help-row"></div>
+      <div id="radarChartAvg" style="width:100%;height:420px;"></div>
+      <div id="hoverInfoAvg" class="hover-info">Hover a point to inspect values.</div>
+      <div id="clickInfoAvg" class="click-info">Click a point to pin details.</div>
+      <p id="chartMessageAvg" class="caption"></p>
+    </div>
+
+    <div id="radarSumCard" class="card chart-card">
+      <div class="chart-title">Average of selected subclasses</div>
+      <div id="radarChartSum" style="width:100%;height:420px;"></div>
+      <div id="hoverInfoSum" class="hover-info">Hover a point to inspect values.</div>
+      <div id="clickInfoSum" class="click-info">Click a point to pin details.</div>
+      <p id="chartMessageSum" class="caption"></p>
+    </div>
+
+    <div id="suggestionsCard" class="card suggestions-panel">
+      <div class="chart-title section-heading">
+        <span>Joining Player Suggestions</span>
+        <span class="help-wrap">
+          <button type="button" class="help-button" aria-label="Joining player suggestions help">?</button>
+          <span class="help-popover">Each suggestion panel compares raw score calculations on the left with a per-metric normalized view on the right. The normalized view only rescales a metric if its dataset-wide maximum exceeds 5.</span>
+        </span>
+      </div>
+      <div id="suggestionsList"></div>
+    </div>
+
+    <div class="card chart-card">
+      <div class="chart-title" style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+        <span>Traits Matrices</span>
+        <label style="font-size:.9rem;">
+          Tier:
+          <select id="tierSelect" style="margin-left:6px; min-width:90px;">
+            <option value="T1">T1</option>
+            <option value="T2">T2</option>
+            <option value="T3">T3</option>
+            <option value="T4" selected>T4</option>
+          </select>
+        </label>
+      </div>
+      <div style="overflow-x:auto;">
+        <div class="chart-title" style="margin-top:4px;">Conditions</div>
+        <div id="conditionMatrixConditions" style="width:100%;height:260px;min-width:980px;"></div>
+        <div class="chart-title" style="margin-top:16px;">Saving Throws</div>
+        <div id="conditionMatrixSaves" style="width:100%;height:240px;min-width:980px;"></div>
+        <div class="chart-title" style="margin-top:16px;">Damage Types</div>
+        <div id="conditionMatrixDamage" style="width:100%;height:260px;min-width:980px;"></div>
+      </div>
+      <p id="conditionMatrixMessage" class="caption"></p>
+      <p class="caption">Advantage = faint blue, Resistance = mid blue, Immunity = dark blue.</p>
+    </div>
+  </div>
+
+  <div id="benchmarkingCard" class="card">
+    <div class="chart-title section-heading">
+      <span>Benchmarking</span>
+      <span class="help-wrap">
+        <button type="button" class="help-button" aria-label="Benchmarking help">?</button>
+        <span class="help-popover">This panel ranks non-UA subclasses by their total and average raw scores, then shows those benchmark values for the subclasses currently selected in the party.</span>
+      </span>
+    </div>
+    <div id="benchmarkingPanelContent"></div>
+  </div>
+
+  <footer style="text-align:center; font-size:.8em; margin-top:20px; color:#666;">
+    <p>Subclass rankings sourced from D4 D&amp;D Deep Dive and Treantmonk's Temple.</p>
+    <p>&copy; Kyle Drover — Design &amp; Development.</p>
+  </footer>
+
+  <script>
+    const METRICS = ['damage', 'survivability', 'support', 'control', 'utility'];
+    const METRIC_LABELS = ['Damage', 'Survivability', 'Support', 'Control', 'Utility'];
+    const OPTIMISER_MIN = 3.5;
+    const METRIC_HELP_TEXT = {
+      damage: 'Overall offensive output, including burst and sustained damage.',
+      survivability: 'How well the build avoids dropping, mitigates risk, or recovers from pressure.',
+      support: 'How much the build improves allies through buffs, healing, or enabling actions.',
+      control: 'How strongly the build shapes enemy turns, positions, or available actions.',
+      utility: 'Out-of-combat flexibility, problem solving, exploration, and general toolkit breadth.'
+    };
+    const SUGGESTION_HELP_TEXT = {
+      optimiser: 'The Optimiser\'s Dream tests each candidate by averaging it into the current party and keeping only candidates that keep every metric above the active threshold. The best valid candidate is the one with the highest combined average.',
+      vibes: 'The Vibes Check finds the candidate that produces the most even party profile by minimizing variance across the combined party metrics.'
+    };
+
+    const CONDITIONS = [
+      'blinded','charmed','deafened','exhaustion','frightened','grappled','incapacitated',
+      'invisible','paralyzed','petrified','poisoned','prone','restrained','stunned','unconscious'
+    ];
+
+    const DAMAGE_TYPES = [
+      'acid','bludgeoning','cold','fire','force','lightning','necrotic',
+      'piercing','poison','psychic','radiant','slashing','thunder'
+    ];
+
+    const SAVE_THROW_KEYS = ['all', 'str', 'dex', 'con', 'int', 'wis', 'cha'];
+    const SAVE_THROW_LABELS = {
+      all: 'All saves',
+      str: 'STR',
+      dex: 'DEX',
+      con: 'CON',
+      int: 'INT',
+      wis: 'WIS',
+      cha: 'CHA'
+    };
+
+    const TIER_RANK = { T1: 1, T2: 2, T3: 3, T4: 4 };
+
+    // Flexible raw text columns from DB
+    const RAW_TRAIT_COLUMNS = {
+      advantage: ['condition_advantages', 'advantages_to_conditions', 'defensive_advantages', 'advantages'],
+      resistance: ['condition_resistances', 'resistances_to_conditions', 'defensive_resistances', 'resistances'],
+      immunity: ['condition_immunities', 'immunities_to_conditions', 'defensive_immunities', 'immunities'],
+      damageResistance: ['damage_resistances', 'resistance_damage_types', 'damage_resistance'],
+      damageImmunity: ['damage_immunities', 'immunity_damage_types', 'damage_immunity']
+    };
+
+    let subclasses = [];
+    let normalizedSubclasses = [];
+    let benchmarks = new Map();
+    let benchmarkEligibleLabels = new Set();
+    let selectedSubclassLabels = [];
+    let onlyIncludeCalculatedValues = true;
+
+    function buildHelpButton(text, label = 'Help') {
+      return `
+        <span class="help-wrap">
+          <button type="button" class="help-button" aria-label="${escapeHtml(label)}">?</button>
+          <span class="help-popover">${escapeHtml(text)}</span>
+        </span>
+      `;
+    }
+
+    function renderMetricHelpRow() {
+      const row = document.getElementById('metricHelpRow');
+      if (!row) return;
+
+      row.innerHTML = METRICS.map(metric => `
+        <span class="metric-chip">
+          <span>${escapeHtml(METRIC_LABELS[METRICS.indexOf(metric)])}</span>
+          ${buildHelpButton(METRIC_HELP_TEXT[metric], `${METRIC_LABELS[METRICS.indexOf(metric)]} help`)}
+        </span>
+      `).join('');
+
+      updateHelpPopoverPositions();
+    }
+
+    function getNumericMetricValue(row, metric) {
+      const rawValue = row?.[metric];
+      if (rawValue === null || rawValue === undefined || rawValue === '') return null;
+
+      const numericValue = Number(rawValue);
+      return Number.isFinite(numericValue) ? numericValue : null;
+    }
+
+    function hasCompleteMetricValues(row) {
+      return METRICS.every(metric => getNumericMetricValue(row, metric) !== null);
+    }
+
+    function getSuggestionDataset(dataset = subclasses) {
+      return dataset.filter(hasCompleteMetricValues);
+    }
+
+    function isUaRow(row) {
+      const rawValue = row?.ua;
+      if (typeof rawValue === 'boolean') return rawValue;
+      if (typeof rawValue === 'number') return rawValue === 1;
+      return String(rawValue || '').trim().toLowerCase() === 'true';
+    }
+
+    function updateHelpPopoverPositions() {
+      document.querySelectorAll('.help-wrap').forEach((wrap) => {
+        const popover = wrap.querySelector('.help-popover');
+        if (!popover) return;
+
+        popover.classList.remove('align-left');
+
+        const rect = popover.getBoundingClientRect();
+        if (rect.right > window.innerWidth - 12) popover.classList.add('align-left');
+      });
+    }
+
+    function formatOption(row) {
+      const subclass = getSubclassName(row) || 'Unknown Subclass';
+      const clazz = getClassName(row) || 'Unknown Class';
+      return `${subclass} (${clazz})`;
+    }
+
+    function hasCalculatedSupportValue(row) {
+      const value = row?.support;
+      return value !== null && value !== undefined && String(value).trim() !== '';
+    }
+
+    function getDropdownRows() {
+      const eligibleRows = subclasses.filter(row => benchmarkEligibleLabels.has(formatOption(row)));
+      if (!onlyIncludeCalculatedValues) return eligibleRows;
+      return eligibleRows.filter(hasCalculatedSupportValue);
+    }
+
+    function syncRadarVisibility() {
+      const show = onlyIncludeCalculatedValues;
+      const avgCard = document.getElementById('radarAvgCard');
+      const sumCard = document.getElementById('radarSumCard');
+      const suggestionsCard = document.getElementById('suggestionsCard');
+      if (avgCard) avgCard.style.display = show ? '' : 'none';
+      if (sumCard) sumCard.style.display = show ? '' : 'none';
+      if (suggestionsCard) suggestionsCard.style.display = show ? '' : 'none';
+
+      if (!show) {
+        Plotly.purge('radarChartAvg');
+        Plotly.purge('radarChartSum');
+      }
+    }
+
+    function applyDropdownFilterMode() {
+      const classSelect = document.getElementById('classSelect');
+      const subclassSelect = document.getElementById('subclassSelect');
+      const prevClass = classSelect?.value || '';
+      const prevSubclass = subclassSelect?.value || '';
+
+      populateClassDropdown();
+
+      if (classSelect && prevClass && [...classSelect.options].some(o => o.value === prevClass)) {
+        classSelect.value = prevClass;
+        populateSubclassDropdown(prevClass);
+      }
+
+      if (subclassSelect && prevSubclass && [...subclassSelect.options].some(o => o.value === prevSubclass)) {
+        subclassSelect.value = prevSubclass;
+      }
+
+      syncRadarVisibility();
+      renderCharts();
+    }
+
+    function getClassName(row) {
+      return pickField(row, [
+        'class', 'class_name', 'classname', 'dnd_class', 'character_class',
+        'Class', 'CLASS'
+      ]);
+    }
+
+    function getSubclassName(row) {
+      return pickField(row, [
+        'subclass', 'sub_class', 'subclassname', 'sub_class_name',
+        'Subclass', 'SUBCLASS'
+      ]);
+    }
+
+    function norm(s) {
+      return String(s ?? '').toLowerCase().replace(/[^a-z0-9\s:]/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    function splitTierSegments(text) {
+      const raw = String(text ?? '');
+      const matches = [...raw.matchAll(/T([1-4])\s*:\s*([\s\S]*?)(?=(?:T[1-4]\s*:)|$)/gi)];
+      if (!matches.length) return [{ tier: 1, body: raw }]; // no tier tag => treat as T1 baseline
+      return matches.map(m => ({ tier: Number(m[1]), body: m[2] || '' }));
+    }
+
+    function getColumnValues(row, candidates) {
+      return candidates
+        .map(c => row?.[c])
+        .filter(v => v !== null && v !== undefined && String(v).trim() !== '');
+    }
+
+    function collectTraitsForRows(rows, selectedTier) {
+      const maxTier = TIER_RANK[selectedTier] || 4;
+
+      const out = {
+        condAdv: new Set(),
+        condRes: new Set(),
+        condImm: new Set(),
+        dmgRes: new Set(),
+        dmgImm: new Set(),
+        saveAdv: new Set()
+      };
+
+      function collectSaveThrowAdvantages(txt) {
+        const hasSaveWord = txt.includes('save') || txt.includes('saving throw') || txt.includes('saving throws');
+        if (!hasSaveWord) return;
+
+        const allSavesPattern = /all\s+sav(e|ing\s+throw)s?|advantage\s+on\s+sav(e|ing\s+throw)s?|saving\s+throw\s+advantage/;
+        if (allSavesPattern.test(txt)) {
+          out.saveAdv.add('all');
+          SAVE_THROW_KEYS.filter(k => k !== 'all').forEach(k => out.saveAdv.add(k));
+        }
+
+        const abilityRules = [
+          { key: 'str', pattern: /(str(ength)?)(\s+ability)?\s+sav(e|ing\s+throw)s?|sav(e|ing\s+throw)s?\s+(for|vs|against|on)?\s*(strength|str)\b/ },
+          { key: 'dex', pattern: /(dex(terity)?)(\s+ability)?\s+sav(e|ing\s+throw)s?|sav(e|ing\s+throw)s?\s+(for|vs|against|on)?\s*(dexterity|dex)\b/ },
+          { key: 'con', pattern: /(con(stitution)?)(\s+ability)?\s+sav(e|ing\s+throw)s?|sav(e|ing\s+throw)s?\s+(for|vs|against|on)?\s*(constitution|con)\b/ },
+          { key: 'int', pattern: /(int(elligence)?)(\s+ability)?\s+sav(e|ing\s+throw)s?|sav(e|ing\s+throw)s?\s+(for|vs|against|on)?\s*(intelligence|int)\b/ },
+          { key: 'wis', pattern: /(wis(dom)?)(\s+ability)?\s+sav(e|ing\s+throw)s?|sav(e|ing\s+throw)s?\s+(for|vs|against|on)?\s*(wisdom|wis)\b/ },
+          { key: 'cha', pattern: /(cha(risma)?)(\s+ability)?\s+sav(e|ing\s+throw)s?|sav(e|ing\s+throw)s?\s+(for|vs|against|on)?\s*(charisma|cha)\b/ }
+        ];
+
+        abilityRules.forEach(({ key, pattern }) => {
+          if (pattern.test(txt)) out.saveAdv.add(key);
+        });
+      }
+
+      for (const row of rows) {
+        for (const v of getColumnValues(row, RAW_TRAIT_COLUMNS.advantage)) {
+          for (const seg of splitTierSegments(v)) {
+            if (seg.tier > maxTier) continue;
+            const txt = norm(seg.body);
+            CONDITIONS.forEach(c => { if (txt.includes(c)) out.condAdv.add(c); });
+            collectSaveThrowAdvantages(txt);
+          }
+        }
+
+        for (const v of getColumnValues(row, RAW_TRAIT_COLUMNS.resistance)) {
+          for (const seg of splitTierSegments(v)) {
+            if (seg.tier > maxTier) continue;
+            const txt = norm(seg.body);
+            CONDITIONS.forEach(c => { if (txt.includes(c)) out.condRes.add(c); });
+            DAMAGE_TYPES.forEach(d => { if (txt.includes(d)) out.dmgRes.add(d); }); // catches B/P/S in mixed fields
+            collectSaveThrowAdvantages(txt);
+          }
+        }
+
+        for (const v of getColumnValues(row, RAW_TRAIT_COLUMNS.immunity)) {
+          for (const seg of splitTierSegments(v)) {
+            if (seg.tier > maxTier) continue;
+            const txt = norm(seg.body);
+            CONDITIONS.forEach(c => { if (txt.includes(c)) out.condImm.add(c); });
+            DAMAGE_TYPES.forEach(d => { if (txt.includes(d)) out.dmgImm.add(d); });
+            collectSaveThrowAdvantages(txt);
+          }
+        }
+
+        for (const v of getColumnValues(row, RAW_TRAIT_COLUMNS.damageResistance)) {
+          for (const seg of splitTierSegments(v)) {
+            if (seg.tier > maxTier) continue;
+            const txt = norm(seg.body);
+            DAMAGE_TYPES.forEach(d => { if (txt.includes(d)) out.dmgRes.add(d); });
+          }
+        }
+
+        for (const v of getColumnValues(row, RAW_TRAIT_COLUMNS.damageImmunity)) {
+          for (const seg of splitTierSegments(v)) {
+            if (seg.tier > maxTier) continue;
+            const txt = norm(seg.body);
+            DAMAGE_TYPES.forEach(d => { if (txt.includes(d)) out.dmgImm.add(d); });
+          }
+        }
+
+        // Barbarian safety rule for B/P/S resistance
+        const clazz = String(row?.class ?? row?.class_name ?? '').toLowerCase();
+        if (clazz === 'barbarian') {
+          out.dmgRes.add('bludgeoning');
+          out.dmgRes.add('piercing');
+          out.dmgRes.add('slashing');
+        }
+      }
+
+      return out;
+    }
+
+    function getRowsForLabel(label, dataset = subclasses) {
+      return dataset.filter(row => formatOption(row) === label);
+    }
+
+    function getAverageMetricsForRows(rows, { requireAll = false } = {}) {
+      if (!rows.length) return null;
+
+      const metrics = [];
+      for (const metric of METRICS) {
+        const values = rows.map(row => getNumericMetricValue(row, metric)).filter(Number.isFinite);
+        if (!values.length) {
+          if (requireAll) return null;
+          metrics.push(0);
+          continue;
+        }
+
+        metrics.push(roundScore(values.reduce((sum, value) => sum + value, 0) / values.length));
+      }
+
+      return metrics;
+    }
+
+    function getMetrics(label, dataset = subclasses, options = {}) {
+      return getAverageMetricsForRows(getRowsForLabel(label, dataset), options);
+    }
+
+    function getCandidateLabels(dataset = subclasses) {
+      return [...new Set(dataset.map(formatOption))];
+    }
+
+    function formatOrdinal(value, isTied = false) {
+      const mod100 = value % 100;
+      if (mod100 >= 11 && mod100 <= 13) return `${isTied ? '=' : ''}${value}th`;
+
+      const mod10 = value % 10;
+      if (mod10 === 1) return `${isTied ? '=' : ''}${value}st`;
+      if (mod10 === 2) return `${isTied ? '=' : ''}${value}nd`;
+      if (mod10 === 3) return `${isTied ? '=' : ''}${value}rd`;
+      return `${isTied ? '=' : ''}${value}th`;
+    }
+
+    function assignRank(entries, key, rankKey) {
+      const sortedEntries = [...entries]
+        .sort((a, b) => (b[key] - a[key]) || a.label.localeCompare(b.label));
+
+      let index = 0;
+      while (index < sortedEntries.length) {
+        const startIndex = index;
+        const currentValue = sortedEntries[index][key];
+
+        while (index < sortedEntries.length && sortedEntries[index][key] === currentValue) {
+          index += 1;
+        }
+
+        const rank = startIndex + 1;
+        const isTied = (index - startIndex) > 1;
+        for (let groupIndex = startIndex; groupIndex < index; groupIndex += 1) {
+          sortedEntries[groupIndex][rankKey] = rank;
+          sortedEntries[groupIndex][`${rankKey}Tied`] = isTied;
+        }
+      }
+    }
+
+    function buildBenchmarkDataset() {
+      const entries = getCandidateLabels(subclasses.filter(row => !isUaRow(row)))
+        .map(label => {
+          const metrics = getMetrics(label, subclasses, { requireAll: true });
+          if (!metrics) return null;
+
+          const maxScore = roundScore(Math.max(...metrics));
+          const average = roundScore(metrics.reduce((sum, value) => sum + value, 0) / METRICS.length);
+          return { label, maxScore, average };
+        })
+        .filter(Boolean);
+
+      assignRank(entries, 'maxScore', 'maxScoreRank');
+      assignRank(entries, 'average', 'averageRank');
+
+      return new Map(entries.map(entry => [entry.label, entry]));
+    }
+
+    function syncSelectedSubclassEligibility() {
+      selectedSubclassLabels = selectedSubclassLabels.filter(label => benchmarkEligibleLabels.has(label));
+    }
+
+    function getPartyAverage(labels, dataset = subclasses) {
+      const selectedMetrics = labels.map(label => getMetrics(label, dataset)).filter(Boolean);
+      if (!selectedMetrics.length) return null;
+      return selectedMetrics
+        .reduce((totals, values) => totals ? totals.map((v, i) => v + values[i]) : [...values], null)
+        .map(v => v / selectedMetrics.length);
+    }
+
+    function getOptimiserSuggestion(labels, dataset = subclasses) {
+      const currentAvg = getPartyAverage(labels, dataset);
+      if (!currentAvg) return null;
+
+      let threshold = OPTIMISER_MIN;
+
+      while (threshold >= 0) {
+        let best = null;
+
+        getCandidateLabels(dataset).forEach(candidateLabel => {
+          if (labels.includes(candidateLabel)) return;
+
+          const candidateValues = getMetrics(candidateLabel, dataset);
+          if (!candidateValues) return;
+          const n = labels.length;
+          const combined = currentAvg.map((v, i) => ((v * n) + candidateValues[i]) / (n + 1));
+
+          // Must satisfy all metrics at current threshold.
+          if (!combined.every(v => v > threshold)) return;
+
+          const combinedAvg = combined.reduce((a, b) => a + b, 0) / combined.length;
+          if (!best || combinedAvg > best.combinedAvg) {
+            best = { label: candidateLabel, combinedAvg };
+          }
+        });
+
+        if (best) {
+          return { ...best, thresholdUsed: threshold };
+        }
+
+        threshold = Number((threshold - 0.25).toFixed(2));
+      }
+
+      return null;
+    }
+
+    function getVibesSuggestion(labels, dataset = subclasses) {
+      const partyAvg = getPartyAverage(labels, dataset);
+      if (!partyAvg) return null;
+
+      let best = null;
+      let minCombinedVariance = Infinity;
+
+      getCandidateLabels(dataset).forEach(candidateLabel => {
+        if (labels.includes(candidateLabel)) return;
+
+        const candidateValues = getMetrics(candidateLabel, dataset);
+        if (!candidateValues) return;
+
+        const combinedCount = labels.length + 1;
+        const combinedValues = partyAvg.map((v, i) => (v * labels.length + candidateValues[i]) / combinedCount);
+        const mean = combinedValues.reduce((sum, value) => sum + value, 0) / METRICS.length;
+        const variance = combinedValues.reduce((sum, value) => sum + Math.pow(value - mean, 2), 0) / METRICS.length;
+
+        if (variance < minCombinedVariance) {
+          minCombinedVariance = variance;
+          best = { label: candidateLabel, variance, combinedValues };
+        }
+      });
+
+      return best ? { ...best, variance: roundScore(best.variance) } : null;
+    }
+
+    function toPolarTrace(name, values, color) {
+      return {
+        type: 'scatterpolar',
+        mode: 'lines+markers',
+        name,
+        r: [...values, values[0]],
+        theta: [...METRIC_LABELS, METRIC_LABELS[0]],
+        line: { color, width: 2 },
+        marker: { size: 6, color },
+        fill: 'toself',
+        fillcolor: 'rgba(37,99,235,0.08)',
+        hovertemplate: '<b>%{fullData.name}</b><br>%{theta}: %{r}<extra></extra>'
+      };
+    }
+
+    function getGlobalMetricMax(dataset = subclasses) {
+      let maxValue = 0;
+
+      dataset.forEach(row => {
+        METRICS.forEach(metric => {
+          const value = getNumericMetricValue(row, metric);
+          if (Number.isFinite(value)) maxValue = Math.max(maxValue, value);
+        });
+      });
+
+      return maxValue || 5;
+    }
+
+    function plotLayout(axisMax) {
+      return {
+        polar: {
+          radialaxis: { visible: true, range: [0, Math.max(5, axisMax)], tick0: 0, dtick: 1 }
+        },
+        margin: { t: 16, r: 24, b: 24, l: 24 },
+        showlegend: true,
+        legend: { orientation: 'h' }
+      };
+    }
+
+    function bindPlotEvents(plotId, hoverInfoId, clickInfoId) {
+      const plot = document.getElementById(plotId);
+      const hoverInfo = document.getElementById(hoverInfoId);
+      const clickInfo = document.getElementById(clickInfoId);
+      if (!plot || !hoverInfo || !clickInfo || typeof plot.on !== 'function') return;
+
+      plot.on('plotly_hover', (data) => {
+        const p = data?.points?.[0];
+        if (!p) return;
+        hoverInfo.textContent = `${p.fullData?.name || 'Trace'} | ${p.theta}: ${p.r}`;
+      });
+
+      plot.on('plotly_click', (data) => {
+        const p = data?.points?.[0];
+        if (!p) return;
+        clickInfo.textContent = `${p.fullData?.name || 'Trace'} | ${p.theta}: ${p.r}`;
+      });
+    }
+
+    function updateSelectedList() {
+      const selectedList = document.getElementById('selectedList');
+      if (!selectedList) return;
+
+      if (!selectedSubclassLabels.length) {
+        selectedList.innerHTML = '';
+        renderCharts();
+        return;
+      }
+
+      selectedList.innerHTML = selectedSubclassLabels
+        .map((label, index) => `
+          <span class="tag">
+            <span>${escapeHtml(label)}</span>
+            <button type="button" onclick="removeSubclassAt(${index})" aria-label="Remove ${escapeHtml(label)}">×</button>
+          </span>
+        `)
+        .join('');
+
+      renderCharts();
+    }
+
+    function removeSubclassAt(index) {
+      if (index < 0 || index >= selectedSubclassLabels.length) return;
+      selectedSubclassLabels.splice(index, 1);
+      updateSelectedList();
+    }
+
+    function calculateSuggestions() {
+      const list = document.getElementById('suggestionsList');
+      if (!list) return;
+
+      if (!selectedSubclassLabels.length) {
+        list.innerHTML = `
+          <div class="suggestion-item">
+            <div class="suggestion-title">The Optimiser\'s Dream ${buildHelpButton(SUGGESTION_HELP_TEXT.optimiser, 'Optimiser\'s Dream help')}</div>
+            <div class="suggestion-content">Add subclasses to get recommendations</div>
+          </div>
+          <div class="suggestion-item">
+            <div class="suggestion-title">The Vibes Check ${buildHelpButton(SUGGESTION_HELP_TEXT.vibes, 'The Vibes Check help')}</div>
+            <div class="suggestion-content">Add subclasses to get recommendations</div>
+          </div>
+        `;
+        updateHelpPopoverPositions();
+        return;
+      }
+
+      const rawSuggestionDataset = getSuggestionDataset(subclasses);
+      const normalizedSuggestionDataset = getSuggestionDataset(normalizedSubclasses);
+      const optimiserRaw = getOptimiserSuggestion(selectedSubclassLabels, rawSuggestionDataset);
+      const optimiserNormalized = getOptimiserSuggestion(selectedSubclassLabels, normalizedSuggestionDataset);
+      const vibesRaw = getVibesSuggestion(selectedSubclassLabels, rawSuggestionDataset);
+      const vibesNormalized = getVibesSuggestion(selectedSubclassLabels, normalizedSuggestionDataset);
+
+      list.innerHTML = `
+        <div class="suggestion-item">
+          <div class="suggestion-title">The Optimiser's Dream ${buildHelpButton(SUGGESTION_HELP_TEXT.optimiser, 'Optimiser\'s Dream help')}</div>
+          <div class="suggestion-columns">
+            <div class="suggestion-column">
+              <div class="suggestion-column-title">Raw values</div>
+              <div class="suggestion-content">
+                ${optimiserRaw
+                  ? `${escapeHtml(optimiserRaw.label)}<br/>Combined Avg: ${optimiserRaw.combinedAvg.toFixed(2)}<br/>All metrics &gt; ${optimiserRaw.thresholdUsed.toFixed(2)}`
+                  : 'No valid subclass found, even after lowering threshold by 0.25 steps.'}
+              </div>
+            </div>
+            <div class="suggestion-column">
+              <div class="suggestion-column-title">Normalized 0-5</div>
+              <div class="suggestion-content">
+                ${optimiserNormalized
+                  ? `${escapeHtml(optimiserNormalized.label)}<br/>Combined Avg: ${optimiserNormalized.combinedAvg.toFixed(2)}<br/>All metrics &gt; ${optimiserNormalized.thresholdUsed.toFixed(2)}`
+                  : 'No valid subclass found, even after lowering threshold by 0.25 steps.'}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="suggestion-item">
+          <div class="suggestion-title">The Vibes Check ${buildHelpButton(SUGGESTION_HELP_TEXT.vibes, 'The Vibes Check help')}</div>
+          <div class="suggestion-columns">
+            <div class="suggestion-column">
+              <div class="suggestion-column-title">Raw values</div>
+              <div class="suggestion-content">${vibesRaw ? `${escapeHtml(vibesRaw.label)}<br/>Variance: ${vibesRaw.variance.toFixed(2)}` : 'N/A'}</div>
+            </div>
+            <div class="suggestion-column">
+              <div class="suggestion-column-title">Normalized 0-5</div>
+              <div class="suggestion-content">${vibesNormalized ? `${escapeHtml(vibesNormalized.label)}<br/>Variance: ${vibesNormalized.variance.toFixed(2)}` : 'N/A'}</div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      updateHelpPopoverPositions();
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function renderBenchmarkingPanel() {
+      const container = document.getElementById('benchmarkingPanelContent');
+      if (!container) return;
+
+      if (!selectedSubclassLabels.length) {
+        container.innerHTML = '<p class="caption">Add subclasses to compare their benchmark max scores, averages, and ranks.</p>';
+        updateHelpPopoverPositions();
+        return;
+      }
+
+      const rows = selectedSubclassLabels.map((label, index) => {
+        const entry = benchmarks.get(label);
+        return {
+          rowLabel: `${index + 1}. ${label}`,
+          maxScore: entry ? entry.maxScore.toFixed(2) : 'N/A',
+          average: entry ? entry.average.toFixed(2) : 'N/A',
+          maxScoreRank: entry ? formatOrdinal(entry.maxScoreRank, entry.maxScoreRankTied) : 'N/A',
+          averageRank: entry ? formatOrdinal(entry.averageRank, entry.averageRankTied) : 'N/A'
+        };
+      });
+
+      container.innerHTML = `
+        <div class="combo-table-wrap">
+          <table class="benchmark-table">
+            <thead>
+              <tr>
+                <th>Selected subclasses (total of ${benchmarks.size} subclasses)</th>
+                <th>Max score</th>
+                <th>Max score rank</th>
+                <th>Average</th>
+                <th>Average rank</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(row => `
+                <tr>
+                  <td>${escapeHtml(row.rowLabel)}</td>
+                  <td>${row.maxScore}</td>
+                  <td>${row.maxScoreRank}</td>
+                  <td>${row.average}</td>
+                  <td>${row.averageRank}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+        <p class="caption">Benchmarks are computed from non-UA subclasses using raw scores, then ranked from highest to lowest.</p>
+      `;
+
+      updateHelpPopoverPositions();
+    }
+
+    function renderConditionMatrix() {
+      const msg = document.getElementById('conditionMatrixMessage');
+      const tier = document.getElementById('tierSelect')?.value || 'T4';
+
+      if (!selectedSubclassLabels.length) {
+        Plotly.purge('conditionMatrixConditions');
+        Plotly.purge('conditionMatrixSaves');
+        Plotly.purge('conditionMatrixDamage');
+        msg.textContent = `Add subclasses to view condition, save, and damage traits (${tier} additive).`;
+        return;
+      }
+
+      const y = [...selectedSubclassLabels];
+      const traitRows = y.map(label => {
+        const rows = subclasses.filter(r => formatOption(r) === label);
+        return collectTraitsForRows(rows, tier);
+      });
+
+      const renderTraitHeatmap = (plotId, columns, valueFn) => {
+        const x = columns.map(c => c.label);
+        const z = traitRows.map(t => columns.map(c => valueFn(t, c)));
+
+        Plotly.react(plotId, [{
+          type: 'heatmap',
+          x, y, z, zmin: 0, zmax: 3, showscale: false,
+          colorscale: [
+            [0.00, '#ffffff'],
+            [0.33, '#dbeafe'],
+            [0.66, '#60a5fa'],
+            [1.00, '#1d4ed8']
+          ],
+          hovertemplate: '<b>%{y}</b><br>%{x}<br>Level: %{z}<extra></extra>'
+        }], {
+          margin: { l: 180, r: 20, t: 10, b: 140 },
+          xaxis: { tickangle: -35 },
+          yaxis: { automargin: true }
+        }, { responsive: true, displayModeBar: true });
+      };
+
+      renderTraitHeatmap(
+        'conditionMatrixConditions',
+        CONDITIONS.map(c => ({ key: c, label: c })),
+        (t, c) => {
+          if (t.condImm.has(c.key)) return 3;
+          if (t.condRes.has(c.key)) return 2;
+          if (t.condAdv.has(c.key)) return 1;
+          return 0;
+        }
+      );
+
+      renderTraitHeatmap(
+        'conditionMatrixSaves',
+        SAVE_THROW_KEYS.map(k => ({ key: k, label: SAVE_THROW_LABELS[k] })),
+        (t, c) => (t.saveAdv.has(c.key) ? 1 : 0)
+      );
+
+      renderTraitHeatmap(
+        'conditionMatrixDamage',
+        DAMAGE_TYPES.map(d => ({ key: d, label: d })),
+        (t, c) => {
+          if (t.dmgImm.has(c.key)) return 3;
+          if (t.dmgRes.has(c.key)) return 2;
+          return 0;
+        }
+      );
+
+      msg.textContent = `${tier} selected (additive). 0=None, 1=Advantage, 2=Resistance, 3=Immunity`;
+    }
+
+    function renderCharts() {
+      calculateSuggestions();
+      renderBenchmarkingPanel();
+
+      const avgMessage = document.getElementById('chartMessageAvg');
+      const sumMessage = document.getElementById('chartMessageSum');
+      const palette = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#a855f7', '#0ea5e9', '#eab308', '#f97316', '#ec4899'];
+
+      const selectedData = selectedSubclassLabels
+        .map(label => ({ label, values: getMetrics(label) }))
+        .filter(x => x.values);
+
+      if (!selectedData.length) {
+        if (onlyIncludeCalculatedValues) {
+          avgMessage.textContent = 'Add one or more subclasses to see radar plots.';
+          sumMessage.textContent = 'Add one or more subclasses to see averaged values.';
+        } else {
+          avgMessage.textContent = '';
+          sumMessage.textContent = '';
+        }
+        Plotly.purge('radarChartAvg');
+        Plotly.purge('radarChartSum');
+        renderConditionMatrix();
+        updateHelpPopoverPositions();
+        return;
+      }
+
+      if (onlyIncludeCalculatedValues) {
+        avgMessage.textContent = '';
+        sumMessage.textContent = '';
+      }
+
+      if (onlyIncludeCalculatedValues) {
+        const axisMax = getGlobalMetricMax(subclasses);
+        const avgTraces = selectedData.map((d, i) => toPolarTrace(d.label, d.values, palette[i % palette.length]));
+        const partyAvg = getPartyAverage(selectedSubclassLabels);
+        const sumTrace = toPolarTrace('Average of selected subclasses', partyAvg, '#10b981');
+
+        Plotly.react('radarChartAvg', avgTraces, plotLayout(axisMax), { responsive: true, displayModeBar: true });
+        Plotly.react('radarChartSum', [sumTrace], plotLayout(axisMax), { responsive: true, displayModeBar: true });
+
+        bindPlotEvents('radarChartAvg', 'hoverInfoAvg', 'clickInfoAvg');
+        bindPlotEvents('radarChartSum', 'hoverInfoSum', 'clickInfoSum');
+      }
+
+      renderConditionMatrix();
+      updateHelpPopoverPositions();
+    }
+
+    document.getElementById('classSelect').addEventListener('change', (e) => {
+      populateSubclassDropdown(e.target.value);
+    });
+
+    document.getElementById('tierSelect').addEventListener('change', () => {
+      renderConditionMatrix();
+    });
+
+    document.querySelectorAll('input[name="calculatedFilterMode"]').forEach((radio) => {
+      radio.addEventListener('change', () => {
+        onlyIncludeCalculatedValues = document.getElementById('calculatedFilterOn').checked;
+        applyDropdownFilterMode();
+      });
+    });
+
+    document.getElementById('addSubclassButton').addEventListener('click', () => {
+      const label = document.getElementById('subclassSelect').value;
+      if (!label) {
+        alert('Select a class and subclass first.');
+        return;
+      }
+      selectedSubclassLabels.push(label); // duplicates allowed
+
+      try {
+        if (typeof updateSelectedList === 'function') {
+          updateSelectedList();
+        } else {
+          // Fallback keeps the app usable when optional render helpers are missing.
+          renderCharts();
+        }
+      } catch (error) {
+        console.error('[Add] failed to update selection UI:', error);
+      }
+    });
+
+    if (typeof removeSubclassAt === 'function') {
+      window.removeSubclassAt = removeSubclassAt;
+    } else {
+      console.warn('[Init] removeSubclassAt is not defined; tag remove actions are disabled.');
+    }
+
+    window.addEventListener('error', (event) => {
+      const msg = event?.error?.message || event?.message || 'Unknown script error';
+      console.error('[GlobalError]', msg, event?.error || '');
+    });
+
+    window.addEventListener('unhandledrejection', (event) => {
+      const reason = event?.reason?.message || String(event?.reason || 'Unknown promise rejection');
+      console.error('[UnhandledRejection]', reason);
+    });
+
+    window.addEventListener('resize', () => {
+      updateHelpPopoverPositions();
+    });
+
+    function normalizeKey(k) {
+      return String(k || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    }
+
+    function pickField(row, candidates) {
+      if (!row || typeof row !== 'object') return '';
+      const keys = Object.keys(row);
+
+      for (const c of candidates) {
+        if (row[c] != null && String(row[c]).trim() !== '') return String(row[c]).trim();
+      }
+
+      for (const c of candidates) {
+        const target = normalizeKey(c);
+        const match = keys.find(k => normalizeKey(k) === target);
+        if (match && row[match] != null && String(row[match]).trim() !== '') {
+          return String(row[match]).trim();
+        }
+      }
+
+      return '';
+    }
+
+    function populateClassDropdown() {
+      const classSelect = document.getElementById('classSelect');
+      if (!classSelect) return;
+
+      const rows = getDropdownRows();
+      const classes = [...new Set(rows.map(getClassName))]
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b));
+
+      classSelect.innerHTML = `
+        <option value="">All classes</option>
+        ${classes.map(c => `<option value="${c}">${c}</option>`).join('')}
+      `;
+
+      populateSubclassDropdown('');
+    }
+
+    function populateSubclassDropdown(selectedClass) {
+      const subclassSelect = document.getElementById('subclassSelect');
+      if (!subclassSelect) return;
+
+      const rows = getDropdownRows();
+      const labels = [...new Set(
+        rows
+          .filter(r => !selectedClass || getClassName(r) === selectedClass)
+          .map(formatOption)
+      )].sort((a, b) => a.localeCompare(b));
+
+      subclassSelect.innerHTML = `
+        <option value="">Select subclass...</option>
+        ${labels.map(l => `<option value="${l}">${l}</option>`).join('')}
+      `;
+
+      subclassSelect.disabled = labels.length === 0;
+    }
+
+    const SCORE_FIELDS = ['damage', 'survivability', 'support', 'control', 'utility'];
+
+    function roundScore(value) {
+      return Math.round(value * 1000) / 1000;
+    }
+
+    function normalizeSuggestionRows(rows) {
+      const clonedRows = rows.map(row => ({ ...row }));
+
+      for (const field of SCORE_FIELDS) {
+        const numericRows = clonedRows.filter(row => Number.isFinite(getNumericMetricValue(row, field)));
+        if (!numericRows.length) continue;
+
+        const fieldMax = Math.max(...numericRows.map(row => getNumericMetricValue(row, field)));
+        if (fieldMax <= 5) continue;
+
+        const scaleFactor = 5 / fieldMax;
+        numericRows.forEach(row => {
+          const value = getNumericMetricValue(row, field);
+          const scaled = roundScore(value * scaleFactor);
+          row[field] = value === fieldMax ? 5 : scaled;
+        });
+      }
+
+      return clonedRows;
+    }
+
+    function assertSuggestionNormalization(rawRows, normalizedRows) {
+      SCORE_FIELDS.forEach(field => {
+        const rawValues = rawRows.map(row => getNumericMetricValue(row, field)).filter(Number.isFinite);
+        const normalizedValues = normalizedRows.map(row => getNumericMetricValue(row, field)).filter(Number.isFinite);
+        if (!rawValues.length || !normalizedValues.length) return;
+
+        const rawMax = Math.max(...rawValues);
+        const normalizedMax = Math.max(...normalizedValues);
+
+        if (rawMax > 5 && normalizedMax !== 5) {
+          throw new Error(`Suggestion normalization failed for ${field}: max is ${normalizedMax}, expected 5.`);
+        }
+
+        if (rawMax <= 5 && normalizedMax !== rawMax) {
+          throw new Error(`Suggestion normalization no-op failed for ${field}: max is ${normalizedMax}, expected ${rawMax}.`);
+        }
+      });
+    }
+
+    async function fetchSubclasses() {
+      const response = await fetch('./subclasses.json', { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Failed to load subclasses.json (${response.status})`);
+
+      const raw = await response.json();
+      const rows =
+        Array.isArray(raw) ? raw :
+        Array.isArray(raw?.rows) ? raw.rows :
+        Array.isArray(raw?.data) ? raw.data : [];
+
+      if (!rows.length) throw new Error('subclasses.json loaded but contains zero rows.');
+
+      subclasses = rows.map(r => ({
+        ...r,
+        class: getClassName(r),
+        subclass: getSubclassName(r)
+      }));
+
+      const usable = subclasses.filter(r => r.class && r.subclass);
+      console.log('[Data] rows:', rows.length, 'usable:', usable.length, 'first keys:', Object.keys(rows[0] || {}));
+
+      if (!usable.length) throw new Error('No usable class/subclass fields found. Check JSON key names.');
+
+      subclasses = usable;
+      normalizedSubclasses = normalizeSuggestionRows(subclasses);
+      benchmarks = buildBenchmarkDataset();
+      benchmarkEligibleLabels = new Set(benchmarks.keys());
+      syncSelectedSubclassEligibility();
+      assertSuggestionNormalization(subclasses, normalizedSubclasses);
+      renderMetricHelpRow();
+      populateClassDropdown();
+      syncRadarVisibility();
+      runDataSanityChecks(subclasses);
+      updateHelpPopoverPositions();
+    }
+
+    // safer boot: don't destroy page if chart render fails
+    window.addEventListener('DOMContentLoaded', async () => {
+      try {
+        await fetchSubclasses();
+      } catch (error) {
+        document.body.innerHTML = `
+          <div style="padding:24px;max-width:720px;margin:40px auto;font-family:Arial,sans-serif;color:#1f2937;">
+            <h1 style="font-size:1.8rem;margin-bottom:16px;">Data loading failed</h1>
+            <p style="font-size:1rem;line-height:1.6;">${error.message}</p>
+          </div>
+        `;
+        console.error(error);
+        return;
+      }
+
+      try {
+        renderCharts();
+      } catch (error) {
+        console.error('[Render] chart render failed:', error);
+      }
+    });
+
+    function runDataSanityChecks(rows) {
+      const warlocks = rows.filter(
+        r => getSubclassName(r).toLowerCase() === 'base warlock'
+      );
+
+      if (!warlocks.length) {
+        console.warn('[Sanity] Base Warlock rows not found.');
+        return;
+      }
+
+      const vals = warlocks.map(r => Number(r.damage)).filter(Number.isFinite);
+      if (!vals.length) {
+        console.error('[Sanity] Base Warlock found but damage missing/non-numeric.');
+        return;
+      }
+
+      const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+      if (Math.abs(avg - 4.25) > 0.001) {
+        console.error(`[Sanity] Base Warlock avg mismatch: ${avg.toFixed(3)} vs 4.25`);
+        alert(`Data sanity warning: Base Warlock avg damage = ${avg.toFixed(3)} (expected 4.25).`);
+      } else {
+        console.log('[Sanity] Base Warlock avg damage OK (4.25).');
+      }
+    }
+
+  </script>
+</body>
+</html>
