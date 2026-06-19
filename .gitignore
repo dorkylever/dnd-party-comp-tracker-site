@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+
+# Editor / OS
+.vscode/
+.DS_Store
+
+# Local build/data artifacts
+*.zip
+*.xlsx
+
+# Logs
+npm-debug.log*
