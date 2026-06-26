@@ -26,6 +26,8 @@ jobs:
           mkdir -p site
           cp index.html site/
           cp subclasses.json site/
+          cp -r css site/
+          cp -r js site/
           touch site/.nojekyll
 
       - name: Configure Pages
