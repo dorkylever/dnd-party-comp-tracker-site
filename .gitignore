@@ -8,6 +8,7 @@ node_modules/
 # Local build/data artifacts
 *.zip
 *.xlsx
+*.db
 
 # Logs
 npm-debug.log*
