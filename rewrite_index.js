@@ -46,15 +46,15 @@ const content = `<!DOCTYPE html>
     let radarChart;
 
     function formatOption(row) {
-      return `${row.subclass} (${row.class})`;
+      return row.subclass + " (" + row.class + ")";
     }
 
     async function fetchSubclasses() {
-      const response = await fetch(`${API_BASE}/subclasses`);
+      const response = await fetch(\`\${API_BASE}/subclasses\`);
       if (!response.ok) throw new Error('Failed to load subclass data');
       subclasses = await response.json();
       document.getElementById('subclassOptions').innerHTML = subclasses
-        .map(row => `<option value="${formatOption(row)}">`).join('');
+        .map(row => \`<option value="\${formatOption(row)}">\`).join('');
     }
 
     function findSubclass(value) {
@@ -77,7 +77,7 @@ const content = `<!DOCTYPE html>
           const row = subclasses.find(r => r.subclass === name);
           if (!row) return '';
           const escapedName = name.replace(/'/g, "\\'");
-          return `\n            <div class="tag">\n              ${formatOption(row)}\n              <button type="button" aria-label="Remove ${name}" onclick="removeSubclass('${escapedName}')">&times;</button>\n            </div>\n          `;
+          return \`\n            <div class="tag">\n              \${formatOption(row)}\n              <button type="button" aria-label="Remove \${name}" onclick="removeSubclass('\${escapedName}')">&times;</button>\n            </div>\n          \`;
         })
         .join('');
       renderChart();
@@ -94,7 +94,7 @@ const content = `<!DOCTYPE html>
       const metrics = ['damage', 'survivability', 'support', 'control', 'utility'];
       const averages = metrics.map(metric => rows.reduce((sum, row) => sum + Number(row[metric] || 0), 0) / rows.length);
       return {
-        label: `${rows[0].subclass} (${rows[0].class})`,
+        label: \`\${rows[0].subclass} (\${rows[0].class})\`,
         values: averages.map(value => Math.round(value * 100) / 100)
       };
     }
