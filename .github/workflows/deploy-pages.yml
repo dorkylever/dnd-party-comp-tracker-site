@@ -26,7 +26,6 @@ jobs:
           mkdir -p site
           cp index.html site/
           cp subclasses.json site/
-          if [ -f read_data.html ]; then cp read_data.html site/; fi
           touch site/.nojekyll
 
       - name: Configure Pages
