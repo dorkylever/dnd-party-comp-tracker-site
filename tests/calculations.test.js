@@ -236,7 +236,6 @@ describe('monster data helpers', () => {
     });
     expect(url).toContain('filters_CR=5');
     expect(url).toContain('filters_CR=10');
-    expect(url).toContain('filters_Edition=2024+Only');
     expect(url).toContain('filters_resistances=Fire');
     expect(url).toContain('filters_immunities=Poison');
   });

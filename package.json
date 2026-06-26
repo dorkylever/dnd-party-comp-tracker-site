@@ -5,17 +5,26 @@
   "main": "server.js",
   "scripts": {
     "test": "jest",
+    "test:unit": "jest",
+    "test:browser": "playwright test",
+    "build:site": "node scripts/build-site.js",
     "start": "node server.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "jest": {
+    "testMatch": [
+      "<rootDir>/tests/*.test.js"
+    ]
+  },
   "dependencies": {
     "express": "^5.2.1",
     "sqlite3": "^6.0.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "jest": "^29.7.0"
   }
 }

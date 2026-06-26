@@ -481,7 +481,6 @@
     params.set('pageNumber', '1');
     params.append('filters_CR', String(crMin));
     params.append('filters_CR', String(crMax));
-    params.append('filters_Edition', '2024 Only');
 
     resistances.forEach(type => {
       params.append('filters_resistances', toRoll20DamageLabel(type));

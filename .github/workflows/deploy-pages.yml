@@ -21,14 +21,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+
       - name: Build site bundle
-        run: |
-          mkdir -p site
-          cp index.html site/
-          cp subclasses.json site/
-          cp -r css site/
-          cp -r js site/
-          touch site/.nojekyll
+        run: node scripts/build-site.js
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

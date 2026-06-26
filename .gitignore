@@ -10,5 +10,11 @@ node_modules/
 *.xlsx
 *.db
 
+# Build output / test artifacts
+site/
+test-results/
+playwright-report/
+.playwright/
+
 # Logs
 npm-debug.log*
