@@ -33,15 +33,75 @@ function renderMetricHelpRow() {
 }
 
 function updateHelpPopoverPositions() {
+  // Positioning now happens on hover/focus via viewport-clamped coordinates
+  // (see positionHelpPopover). This just ensures the global listeners exist;
+  // it stays callable from every render path without doing per-render work.
+  initHelpPopovers();
+}
+
+// Places a popover in the viewport relative to its trigger, flipping and
+// clamping so it can never render off-screen (horizontally or vertically).
+function positionHelpPopover(wrap) {
+  const popover = wrap.querySelector('.help-popover');
+  if (!popover) return;
+
+  const trigger = wrap.querySelector('.help-button') || wrap;
+  const margin = 8;
+  // Use the documentElement client size (the visible area EXCLUDING scrollbars)
+  // rather than window.innerWidth/innerHeight (which include the scrollbar).
+  // Otherwise a popover can be clamped into the scrollbar gutter and render
+  // partly off the actually-visible screen.
+  const vw = document.documentElement.clientWidth;
+  const vh = document.documentElement.clientHeight;
+  const btn = trigger.getBoundingClientRect();
+
+  // Constrain popup size first so measurements reflect on-screen dimensions.
+  popover.style.maxWidth = `${Math.max(160, vw - margin * 2)}px`;
+  popover.style.maxHeight = `${Math.max(120, vh - margin * 2)}px`;
+
+  const pop = popover.getBoundingClientRect();
+
+  // Horizontal: right-align to the trigger, then clamp inside the viewport.
+  let left = btn.right - pop.width;
+  const maxLeft = Math.max(margin, vw - pop.width - margin);
+  left = Math.min(Math.max(margin, left), maxLeft);
+
+  // Vertical: prefer above the trigger; flip below when there isn't room.
+  let top = btn.top - pop.height - margin;
+  if (top < margin) top = btn.bottom + margin;
+  const maxTop = Math.max(margin, vh - pop.height - margin);
+  top = Math.min(Math.max(margin, top), maxTop);
+
+  popover.style.left = `${Math.round(left)}px`;
+  popover.style.top = `${Math.round(top)}px`;
+}
+
+function repositionOpenHelpPopovers() {
   document.querySelectorAll('.help-wrap').forEach((wrap) => {
     const popover = wrap.querySelector('.help-popover');
-    if (!popover) return;
-
-    popover.classList.remove('align-left');
-
-    const rect = popover.getBoundingClientRect();
-    if (rect.right > window.innerWidth - 12) popover.classList.add('align-left');
+    if (popover && getComputedStyle(popover).visibility === 'visible') {
+      positionHelpPopover(wrap);
+    }
   });
+}
+
+// Wires the (idempotent) global listeners once. Uses event delegation so
+// dynamically rendered help buttons (charts, monsters, suggestions) are covered.
+function initHelpPopovers() {
+  if (window.__helpPopoverInit) return;
+  window.__helpPopoverInit = true;
+
+  document.addEventListener('mouseover', (e) => {
+    const wrap = e.target.closest?.('.help-wrap');
+    if (wrap) positionHelpPopover(wrap);
+  });
+  document.addEventListener('focusin', (e) => {
+    const wrap = e.target.closest?.('.help-wrap');
+    if (wrap) positionHelpPopover(wrap);
+  });
+
+  window.addEventListener('scroll', repositionOpenHelpPopovers, true);
+  window.addEventListener('resize', repositionOpenHelpPopovers);
 }
 
 // ─── Radar plot helpers ─────────────────────────────────────────────────────
